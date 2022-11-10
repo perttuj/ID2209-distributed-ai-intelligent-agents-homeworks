@@ -108,7 +108,13 @@ species FestivalGuest skills:[moving]
 		}
 		targetPoint <- nil;
 		traversedSteps <- 0;
-		color <- #blue;
+		if self.isBad 
+		{
+			color <- #black;
+		} 
+		else {
+			color <- #blue;
+		}
 	}
 
 	reflex imHungryOrThirsty when: (THIRST < 3 or HUNGER < 3) and targetPoint = nil
@@ -213,12 +219,12 @@ species SecurityGuard skills: [moving]
 	
 	FestivalGuest targetAgent <- nil;
 	
-	reflex when: targetAgent = nil
+	reflex beIdle when: targetAgent = nil
 	{
 		do wander;
 	}
 	
-	reflex when: targetAgent != nil and location distance_to(targetAgent) > 2
+	reflex targetAcquired when: targetAgent != nil and location distance_to(targetAgent) > 2
 	{
 		// update location to target to make sure we're following them. they cannot escape!
 		ask targetAgent {
@@ -227,7 +233,7 @@ species SecurityGuard skills: [moving]
 		do goto target: targetAgent;
 	}
 	
-	reflex when: targetAgent != nil and location distance_to(targetAgent) <= 2
+	reflex targetReached when: targetAgent != nil and location distance_to(targetAgent) <= 2
 	{
 		write "i'm sorry little one";
 		ask targetAgent {
@@ -271,7 +277,8 @@ species InformationCenter
 				FestivalGuest currentAgent <- neighbors at i;
 				// check if any of our neighbours are behaving badly!
 				ask currentAgent {
-					if self.isBad {
+					if self.isBad 
+					{
 						myself.badAgent <- self;
 					}
 				}
@@ -286,12 +293,12 @@ species InformationCenter
 		ask guard {
 			// make sure we aren't distracted by multiple bad agents
 			// we kill one at a time!
-			if self.targetAgent != nil
+			if self.targetAgent = nil
 			{
 				self.targetAgent <- myself.badAgent;
+				myself.badAgent <- nil;
 			}
 		}
-		badAgent <- nil;
 	}
 	/** END NEW PART - CHALLENGE 2 */
 	
