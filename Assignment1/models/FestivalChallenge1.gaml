@@ -61,7 +61,6 @@ species FestivalGuest skills:[moving]
 
 	reflex moveToTarget when: targetPoint != nil
 	{
-		// TODO: Combine this with enterStore?
 		traversedSteps <- traversedSteps + 1;
 		do goto target:targetPoint;
 	}
@@ -80,9 +79,19 @@ species FestivalGuest skills:[moving]
 			}
 			write "average steps taken by guest: " + totalSteps / historyLength;
 		}
-		// TODO: Replenish either thirst or hunger, not both
-		THIRST <- 100000;
-		HUNGER <- 100000;
+		// Replenish everything the store has to offer.
+		// we want to avoid multiple trips if possible!
+		ask agents of_generic_species Store closest_to(location)
+		{
+			if self.sellsDrink
+			{
+				myself.THIRST <- 100000;
+			}
+			if self.sellsFood
+			{
+				myself.HUNGER <- 100000;
+			}
+		}
 		targetPoint <- nil;
 		traversedSteps <- 0;
 		color <- #blue;
@@ -211,37 +220,39 @@ species InformationCenter
 
 species Store
 {
+	bool sellsDrink <- false;
+	bool sellsFood <- false;
 	float size <- 1.0;
-
-}
-
-species FoodStore parent: Store
-{
-	rgb color <- #red;
+	rgb color;
 	
 	aspect base
 	{
 		draw triangle(size) color: color;
+	}
+}
+
+species FoodStore parent: Store
+{
+	init {
+		sellsFood <- true;
+		color <- #red;
 	}
 }
 
 species DrinkStore parent: Store
 {
-	rgb color <- #yellow;
-	
-	aspect base
-	{
-		draw triangle(size) color: color;
+	init {
+		sellsDrink <- true;
+		color <- #yellow;
 	}
 }
 
 species DrinkFoodStore parent: Store
 {
-	rgb color <- #orange;
-	
-	aspect base
-	{
-		draw triangle(size) color: color;
+	init {
+		sellsDrink <- true;
+		sellsFood <- true;
+		color <- #orange;
 	}
 }
 
