@@ -10,21 +10,57 @@ model FestivalBasic
 global {
 	int numberOfPeople <- 20;
 	
-	int numberOfFoodStores <- 3;
-	int numberOfDrinkStores <- 3;
-	int numberOfDrinkFoodStores <- 3;
+	int numberOfFoodStores <- 2;
+	int numberOfDrinkStores <- 2;
+	int numberOfDrinkFoodStores <- 2;
 	
 	int numberOfInfoCenter <- 1;
 	
 	int distanceThreshold <- 10;
 	
-	point informationCenterLocation <- {50,50};
+	point informationCenterLocation <- {50,75};
 	
 	init {
 		create FestivalGuest number: numberOfPeople;
-		create DrinkStore number: numberOfDrinkStores;
-		create FoodStore number: numberOfFoodStores;
-		create DrinkFoodStore number: numberOfDrinkFoodStores;
+		/** START DYNAMIC SECTION
+		 * These store locations will be dynamic,
+		 * and therefore aren't suitable for performance testing
+		 * of different implementations */
+		// create DrinkStore number: numberOfDrinkStores;
+		// create FoodStore number: numberOfFoodStores;
+		// create DrinkFoodStore number: numberOfDrinkFoodStores;
+		/** END DYNAMIC SECTION */
+		
+		/** START STATIC SECTION
+		 * The section below is used to test brain performance
+		 * by using static store locations.
+		 * Make sure to comment out the dynamic section above
+		 * if using static locations, and vice-versa. */
+		create FoodStore number: 1
+		{
+			location <- {0,25};
+		}
+		create DrinkStore number: 1
+		{
+			location <- {20,25};
+		}
+		create DrinkFoodStore number: 1
+		{
+			location <- {40,25};
+		}
+		create FoodStore number: 1
+		{
+			location <- {60,25};
+		}
+		create DrinkStore number: 1
+		{
+			location <- {80,25};
+		}
+		create DrinkFoodStore number: 1
+		{
+			location <- {100,25};
+		}
+		/** END STATIC SECTION */
 		create InformationCenter number: numberOfInfoCenter
 		{
 			location <- informationCenterLocation;
@@ -36,7 +72,6 @@ species FestivalGuest skills:[moving]
 {
 	int THIRST <- 100000 update: THIRST - rnd(100);
 	int HUNGER <- 100000 update: HUNGER - rnd(100);
-	int traversalPrintThreshold <- 10;
 	
 	point targetPoint <- nil;
 	
@@ -44,6 +79,7 @@ species FestivalGuest skills:[moving]
 	rgb color <- #blue;
 	
 	int traversedSteps <- 0;
+	int traversalPrintThreshold <- 10;
 	list<int> traversedStepsHistory;
 	
 	reflex beIdle when: targetPoint = nil
@@ -70,6 +106,9 @@ species FestivalGuest skills:[moving]
 				totalSteps <- totalSteps + traversedStepsHistory at i;
 			}
 			write "average steps taken by guest: " + totalSteps / historyLength;
+			// we want to clear the history to see how much the steps improve
+			// as we continue dancing around the festival area
+			traversedStepsHistory <- [];
 		}
 
 		// Replenish everything the store has to offer.
@@ -112,25 +151,25 @@ species FestivalGuest skills:[moving]
 		do goto target:informationCenterLocation;
 	}
 	
-	reflex getDirections when: location distance_to(informationCenterLocation)<2 and (THIRST < 3 or HUNGER < 3)
+	reflex getDirections when: location distance_to(informationCenterLocation) < 2 and (THIRST < 3 or HUNGER < 3) and targetPoint = nil
 	{
 		bool isThirsty <- THIRST < 3 and HUNGER >= 3;
 		bool isHungry <- THIRST >= 3 and HUNGER < 3;
 		bool isHungryAndThirsty <- THIRST < 3 and HUNGER < 3;
 	
-		if isThirsty {
+		if isHungryAndThirsty {
+			ask InformationCenter at_distance(distanceThreshold) {
+				myself.targetPoint <- self.drinkFoodStoreLocations[rnd(numberOfDrinkFoodStores-1)].location;
+			}
+		}
+		else if isThirsty {
 			ask InformationCenter at_distance(distanceThreshold) {
 				myself.targetPoint <- self.drinkStoreLocations[rnd(numberOfDrinkStores-1)].location;
 			}
 		}
-		if isHungry {
+		else if isHungry {
 			ask InformationCenter at_distance(distanceThreshold) {
 				myself.targetPoint <- self.foodStoreLocations[rnd(numberOfFoodStores-1)].location;
-			}
-		}
-		if isHungryAndThirsty {
-			ask InformationCenter at_distance(distanceThreshold) {
-				myself.targetPoint <- self.drinkFoodStoreLocations[rnd(numberOfDrinkFoodStores-1)].location;
 			}
 		}
 	}

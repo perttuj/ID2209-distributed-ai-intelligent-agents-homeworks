@@ -8,23 +8,59 @@
 model FestivalChallenge1
 
 global {
-	int numberOfPeople <- 20;
+	int numberOfPeople <- 10;
 	
-	int numberOfFoodStores <- 3;
-	int numberOfDrinkStores <- 3;
-	int numberOfDrinkFoodStores <- 3;
+	int numberOfFoodStores <- 2;
+	int numberOfDrinkStores <- 2;
+	int numberOfDrinkFoodStores <- 2;
 	
 	int numberOfInfoCenter <- 1;
 	
 	int distanceThreshold <- 10;
 	
-	point informationCenterLocation <- {50,50};
+	point informationCenterLocation <- {50,75};
 	
 	init {
 		create FestivalGuest number: numberOfPeople;
-		create DrinkStore number: numberOfDrinkStores;
-		create FoodStore number: numberOfFoodStores;
-		create DrinkFoodStore number: numberOfDrinkFoodStores;
+		/** START DYNAMIC SECTION
+		 * These store locations will be dynamic,
+		 * and therefore aren't suitable for performance testing
+		 * of different implementations */
+		// create DrinkStore number: numberOfDrinkStores;
+		// create FoodStore number: numberOfFoodStores;
+		// create DrinkFoodStore number: numberOfDrinkFoodStores;
+		/** END DYNAMIC SECTION */
+		
+		/** START STATIC SECTION
+		 * The section below is used to test brain performance
+		 * by using static store locations.
+		 * Make sure to comment out the dynamic section above
+		 * if using static locations, and vice-versa. */
+		create FoodStore number: 1
+		{
+			location <- {0,25};
+		}
+		create DrinkStore number: 1
+		{
+			location <- {20,25};
+		}
+		create DrinkFoodStore number: 1
+		{
+			location <- {40,25};
+		}
+		create FoodStore number: 1
+		{
+			location <- {60,25};
+		}
+		create DrinkStore number: 1
+		{
+			location <- {80,25};
+		}
+		create DrinkFoodStore number: 1
+		{
+			location <- {100,25};
+		}
+		/** END STATIC SECTION */
 		create InformationCenter number: numberOfInfoCenter
 		{
 			location <- informationCenterLocation;
@@ -36,7 +72,6 @@ species FestivalGuest skills:[moving]
 {
 	int THIRST <- 100000 update: THIRST - rnd(100);
 	int HUNGER <- 100000 update: HUNGER - rnd(100);
-	int traversalPrintThreshold <- 10;
 	
 	point targetPoint <- nil;
 	
@@ -44,16 +79,17 @@ species FestivalGuest skills:[moving]
 	rgb color <- #blue;
 
 	int traversedSteps <- 0;
+	int traversalPrintThreshold <- 10;
 	list<int> traversedStepsHistory;
 
 	/** START NEW PART - CHALLENGE 1
 	 * Here, we define the shape of our "brain" */
+	bool headingToInfoCenter <- false;
 	list<point> memoDrink;
 	list<point> memoFood;
 	list<point> memoDrinkFood;
 	/** END NEW PART - CHALLENGE 1 */
 
-	
 	reflex beIdle when: targetPoint = nil
 	{
 		do wander;
@@ -78,6 +114,9 @@ species FestivalGuest skills:[moving]
 				totalSteps <- totalSteps + traversedStepsHistory at i;
 			}
 			write "average steps taken by guest: " + totalSteps / historyLength;
+			// we want to clear the history to see how much the steps improve
+			// as we continue dancing around the festival area
+			traversedStepsHistory <- [];
 		}
 		// Replenish everything the store has to offer.
 		// we want to avoid multiple trips if possible!
@@ -97,7 +136,17 @@ species FestivalGuest skills:[moving]
 		color <- #blue;
 	}
 	
-	reflex imHungryOrThirsty when: (THIRST < 3 or HUNGER < 3) and targetPoint = nil
+	/* START NEW PART - CHALLENGE 1 */
+	reflex headTowardInformationCenter when: headingToInfoCenter = true
+	{
+		do goto target: informationCenterLocation;
+	}
+
+	/* We extend the condition here with "headingToInfoCenter = false"
+	 * to avoid scenarios where the guest starts heading to the infor center,
+	 * directly followed by looking in their brain (i.e. doing unnecessary steps) */
+	/* END NEW PART - CHALLENGE 1 */
+	reflex imHungryOrThirsty when: (THIRST < 3 or HUNGER < 3) and targetPoint = nil and headingToInfoCenter = false
 	{
 		bool isThirsty <- THIRST < 3 and HUNGER >= 3;
 		bool isHungry <- THIRST >= 3 and HUNGER < 3;
@@ -115,54 +164,78 @@ species FestivalGuest skills:[moving]
 		{
 			color <- #orange;
 		}
+		
 		/** START NEW PART - CHALLENGE 1
 		 * Here, we want to "look in our brain" to see
 		 * if we already know some route to a store.
 		 * In some cases, we want to explore anyway -
-		 * so we've set the probability to 50% here.
+		 * so we've set the probability to 80% here.
 		 */
-		if flip(0.5){
-			// explore a new store
-			do goto target:informationCenterLocation;
-			return;
-		}
-		// else, "look in our brain" for a known location (if there is any..)!
-		if isThirsty {
-			if !empty(memoDrink){
-				int idx <- rnd(length(memoDrink) - 1);
-				targetPoint <- memoDrink at idx;
-			} else {
-				do goto target:informationCenterLocation;
+		if flip(0.8) {
+			// "look in our brain" for a known location (if there is any..)!
+			if isHungryAndThirsty {
+				if !empty(memoDrinkFood){
+					int idx <- rnd(length(memoDrinkFood) - 1);
+					targetPoint <- memoDrinkFood at idx;
+				} else {
+					headingToInfoCenter <- true;
+				}
 			}
-			
-		}
-		if isHungry {
-			if !empty(memoFood){
-				int idx <- rnd(length(memoFood) - 1);
-				targetPoint <- memoFood at idx;
-			} else {
-				do goto target:informationCenterLocation;
+			else if isThirsty {
+				if !empty(memoDrink){
+					int idx <- rnd(length(memoDrink) - 1);
+					targetPoint <- memoDrink at idx;
+				} else {
+					headingToInfoCenter <- true;
+				}
 			}
-			
-		}
-		if isHungryAndThirsty {
-			if !empty(memoDrinkFood){
-				int idx <- rnd(length(memoDrinkFood) - 1);
-				targetPoint <- memoDrinkFood at idx;
-			} else {
-				do goto target:informationCenterLocation;
+			else if isHungry {
+				if !empty(memoFood){
+					int idx <- rnd(length(memoFood) - 1);
+					targetPoint <- memoFood at idx;
+				} else {
+					headingToInfoCenter <- true;
+				}
 			}
+		} else {
+			// else, occasionally explore new areas!
+			headingToInfoCenter <- true;
 		}
 		/** END NEW PART - CHALLENGE 1 */
 	}
 	
-	reflex getDirections when: location distance_to(informationCenterLocation)<2 and (THIRST < 3 or HUNGER < 3)
+	/* START NEW PART - CHALLENGE 1 */
+	/* We extend the condition here with "headingToInfoCenter = true"
+	 * to avoid scenarios where the guest asks for directions multiple times */
+	/* END NEW PART - CHALLENGE 1 */
+	reflex getDirections when: headingToInfoCenter = true and location distance_to(informationCenterLocation) < 2 and (THIRST < 3 or HUNGER < 3) and targetPoint = nil
 	{
 		bool isThirsty <- THIRST < 3 and HUNGER >= 3;
 		bool isHungry <- THIRST >= 3 and HUNGER < 3;
 		bool isHungryAndThirsty <- THIRST < 3 and HUNGER < 3;
 	
-		if isThirsty {
+		/** START NEW PART - CHALLENGE 1 */
+		headingToInfoCenter <- false;
+		/** END NEW PART - CHALLENGE 1 */
+
+		if isHungryAndThirsty {
+			ask InformationCenter at_distance(distanceThreshold) {
+				myself.targetPoint <- self.drinkFoodStoreLocations[rnd(numberOfDrinkFoodStores-1)].location;
+			}
+
+			/** START NEW PART - CHALLENGE 1 */
+			if !(memoDrinkFood contains targetPoint) {
+				memoDrinkFood <- memoDrinkFood + targetPoint;
+			}
+			if !(memoDrink contains targetPoint) {
+				memoDrink <- memoDrink + targetPoint;
+			}
+			if !(memoFood contains targetPoint) {
+				memoFood <- memoFood + targetPoint;
+			}
+			/** END NEW PART - CHALLENGE 1 */
+		}
+		else if isThirsty {
 			ask InformationCenter at_distance(distanceThreshold) {
 				myself.targetPoint <- self.drinkStoreLocations[rnd(numberOfDrinkStores-1)].location;
 			}
@@ -173,7 +246,7 @@ species FestivalGuest skills:[moving]
 			}
 			/** END NEW PART - CHALLENGE 1 */
 		}
-		if isHungry {
+		else if isHungry {
 			ask InformationCenter at_distance(distanceThreshold) {
 				myself.targetPoint <- self.foodStoreLocations[rnd(numberOfFoodStores-1)].location;
 			}
@@ -182,18 +255,7 @@ species FestivalGuest skills:[moving]
 			if !(memoFood contains targetPoint) {
 				memoFood <- memoFood + targetPoint;
 			}
-			/** START NEW PART - CHALLENGE 1 */
-		}
-		if isHungryAndThirsty {
-			ask InformationCenter at_distance(distanceThreshold) {
-				myself.targetPoint <- self.drinkFoodStoreLocations[rnd(numberOfDrinkFoodStores-1)].location;
-			}
-
-			/** START NEW PART - CHALLENGE 1 */
-			if !(memoDrinkFood contains targetPoint) {
-				memoDrinkFood <- memoDrinkFood + targetPoint;
-			}
-			/** START NEW PART - CHALLENGE 1 */
+			/** END NEW PART - CHALLENGE 1 */
 		}
 	}
 	
