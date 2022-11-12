@@ -199,7 +199,7 @@ species Store
 {
 	bool sellsDrink <- false;
 	bool sellsFood <- false;
-	float size <- 1.0;
+	float size <- 2.0;
 	rgb color;
 	
 	aspect base

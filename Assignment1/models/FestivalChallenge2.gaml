@@ -21,7 +21,6 @@ global {
 	point informationCenterLocation <- {50,75};
 	
 	/** START NEW PART - CHALLENGE 2 */
-	int numberOfBadPeople <- 5;
 	int numberOfSecurity <- 1;
 	/** END NEW PART - CHALLENGE 2 */
 	
@@ -71,11 +70,6 @@ global {
 			location <- informationCenterLocation;
 		}
 		/** START NEW PART - CHALLENGE 2 */
-		create FestivalGuest number: numberOfBadPeople
-		{
-			isBad <- true;
-			color <- #black;
-		}
 		create SecurityGuard number: numberOfSecurity;
 		/** END NEW PART - CHALLENGE 2 */
 	}
@@ -109,6 +103,13 @@ species FestivalGuest skills:[moving]
 	reflex beIdle when: targetPoint = nil
 	{
 		do wander;
+		/** START NEW PART - CHALLENGE 2 */
+		// occasionally, guests will start misbehaving (0.1%)
+		if (flip(0.001)) {
+			isBad <- true;
+			color <- #black;
+		}
+		/** END NEW PART - CHALLENGE 2 */
 	}
 
 	reflex moveToTarget when: targetPoint != nil
@@ -129,7 +130,7 @@ species FestivalGuest skills:[moving]
 			{
 				totalSteps <- totalSteps + traversedStepsHistory at i;
 			}
-			write "average steps taken by guest: " + totalSteps / historyLength;
+			// write "average steps taken by guest: " + totalSteps / historyLength;
 			// we want to clear the history to see how much the steps improve
 			// as we continue dancing around the festival area
 			traversedStepsHistory <- [];
@@ -380,7 +381,7 @@ species Store
 {
 	bool sellsDrink <- false;
 	bool sellsFood <- false;
-	float size <- 1.0;
+	float size <- 2.0;
 	rgb color;
 	
 	aspect base

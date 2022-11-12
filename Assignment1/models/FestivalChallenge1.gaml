@@ -8,7 +8,7 @@
 model FestivalChallenge1
 
 global {
-	int numberOfPeople <- 10;
+	int numberOfPeople <- 20;
 	
 	int numberOfFoodStores <- 2;
 	int numberOfDrinkStores <- 2;
@@ -284,7 +284,7 @@ species Store
 {
 	bool sellsDrink <- false;
 	bool sellsFood <- false;
-	float size <- 1.0;
+	float size <- 2.0;
 	rgb color;
 	
 	aspect base
