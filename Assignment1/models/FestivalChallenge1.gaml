@@ -139,6 +139,7 @@ species FestivalGuest skills:[moving]
 	/* START NEW PART - CHALLENGE 1 */
 	reflex headTowardInformationCenter when: headingToInfoCenter = true
 	{
+		traversedSteps <- traversedSteps + 1;
 		do goto target: informationCenterLocation;
 	}
 

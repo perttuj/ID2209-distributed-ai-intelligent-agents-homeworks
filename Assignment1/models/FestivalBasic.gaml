@@ -147,7 +147,8 @@ species FestivalGuest skills:[moving]
 		{
 			color <- #orange;
 		}
-
+				
+		traversedSteps <- traversedSteps + 1;
 		do goto target:informationCenterLocation;
 	}
 	
