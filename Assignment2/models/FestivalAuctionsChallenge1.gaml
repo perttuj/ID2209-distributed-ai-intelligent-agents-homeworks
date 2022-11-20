@@ -1,11 +1,11 @@
 /**
-* Name: FestivalAuctions
+* Name: FestivalAuctionsChallenge1
 * Based on the internal empty template. 
 * Author: perttuj & GGmorello
 * Tags: 
 */
 
-model FestivalAuctions
+model FestivalAuctionsChallenge1
 
 global {
 	int numberOfPeople <- 20;
