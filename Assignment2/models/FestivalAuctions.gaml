@@ -61,7 +61,7 @@ global {
 		{
 			location <- informationCenterLocation;
 		}
-		create SecurityGuard number: numberOfSecurity;
+		// create SecurityGuard number: numberOfSecurity;
 		
 		create DutchAuctioneer
 		{
@@ -277,7 +277,7 @@ species FestivalGuest skills:[moving, fipa]
 		do goto target: auctionLocation;
 	}
 	
-	reflex auction when: (!empty(cfps)) {
+	reflex respondToCfp when: (!empty(cfps)) {
 		message cfp <- cfps at 0;
 		list<string> content <- cfp.contents as list<string>;
 		int price <- content at 1 as int;

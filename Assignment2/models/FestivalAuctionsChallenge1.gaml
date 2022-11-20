@@ -8,7 +8,7 @@
 model FestivalAuctionsChallenge1
 
 global {
-	int numberOfPeople <- 20;
+	int numberOfPeople <- 21;
 	
 	int numberOfFoodStores <- 2;
 	int numberOfDrinkStores <- 2;
@@ -21,17 +21,38 @@ global {
 	int numberOfSecurity <- 1;
 	
 	int initialGuestMoneyMaxRange <- 10000;
-	int initialAuctionPrice <- 200000;
-	int minimumAuctionPrice <- 100000;
+	int initialAuctionPrice <- 20000;
+	int minimumAuctionPrice <- 5000;
 	int auctionDistanceThreshold <- 10;
 	
-	point informationCenterLocation <- {50,75};
+	string CD_ITEM_TYPE <- "CD_ITEM_TYPE";
+	rgb CD_ITEM_COLOR <- #teal;
 	
+	string CLOTHING_ITEM_TYPE <- "CLOTHING_ITEM_TYPE";
+	rgb CLOTHING_ITEM_COLOR <- #orange;
+
+	string VIP_TICKET_ITEM_TYPE <- "VIP_TICKET_ITEM_TYPE";
+	rgb VIP_ITEM_COLOR <- #purple;
+	
+	point informationCenterLocation <- {50,75};
 	point auctionLocation <- {50, 50};
 	
-	
 	init {
-		create FestivalGuest number: numberOfPeople;
+		create FestivalGuest number: numberOfPeople / 3
+		{
+			interestedInItemType <- CD_ITEM_TYPE;
+			color <- CD_ITEM_COLOR;
+		}
+		create FestivalGuest number: numberOfPeople / 3
+		{
+			interestedInItemType <- CLOTHING_ITEM_TYPE;
+			color <- CLOTHING_ITEM_COLOR;
+		}
+		create FestivalGuest number: numberOfPeople / 3
+		{
+			interestedInItemType <- VIP_TICKET_ITEM_TYPE;
+			color <- VIP_ITEM_COLOR;
+		}
 
 		create FoodStore number: 1
 		{
@@ -61,11 +82,25 @@ global {
 		{
 			location <- informationCenterLocation;
 		}
-		create SecurityGuard number: numberOfSecurity;
+		// create SecurityGuard number: numberOfSecurity;
 		
 		create DutchAuctioneer
 		{
-			location <- auctionLocation;
+			location <- {25, 50};
+			itemType <- CD_ITEM_TYPE;
+			color <- CD_ITEM_COLOR;
+		}
+		create DutchAuctioneer
+		{
+			location <- {50, 50};
+			itemType <- VIP_TICKET_ITEM_TYPE;
+			color <- VIP_ITEM_COLOR;
+		}
+		create DutchAuctioneer
+		{
+			location <- {75, 50};
+			itemType <- CLOTHING_ITEM_TYPE;
+			color <- CLOTHING_ITEM_COLOR;
 		}
 	}
 }
@@ -91,9 +126,10 @@ species FestivalGuest skills:[moving, fipa]
 
 	bool isBad <- false;
 	
-	bool joinAuction <- false;
+	Auctioneer joinedAuction <- nil;
 	
 	int money <- 0;
+	string interestedInItemType;
 	
 	init {
 		money <- rnd(0, initialGuestMoneyMaxRange);
@@ -145,11 +181,20 @@ species FestivalGuest skills:[moving, fipa]
 		}
 		targetPoint <- nil;
 		traversedSteps <- 0;
-		if self.isBad 
+		/* if self.isBad 
 		{
 			color <- #black;
 		} 
 		else {
+			color <- #blue;
+		} */
+		if self.interestedInItemType = CD_ITEM_TYPE {
+			color <- CD_ITEM_COLOR;
+		} else if self.interestedInItemType = CLOTHING_ITEM_TYPE {
+			color <- CLOTHING_ITEM_COLOR;
+		} else if self.interestedInItemType = VIP_TICKET_ITEM_TYPE {
+			color <- VIP_ITEM_COLOR;
+		} else {
 			color <- #blue;
 		}
 	}
@@ -252,32 +297,36 @@ species FestivalGuest skills:[moving, fipa]
 	
 	reflex answerInvitation when: (!empty(informs))
 	{
-		message requestFromDutchAuctioneer <- informs[0];
-		string informType <- requestFromDutchAuctioneer.contents[0];
-		
+		message requestFromAuctioneer <- informs[0];
+		string informType <- requestFromAuctioneer.contents[0];
 		if (informType = "start_auction") {
 			// write self.name + ": auction started";
-			if joinAuction = false and THIRST > 10000 and HUNGER > 10000 and money > 0 {
-				// write self.name + ": accepting invitation";
-				do agree with: (message: requestFromDutchAuctioneer, contents: [self.name + ': I will']);
-				joinAuction <- true;
+			string auctionType <- requestFromAuctioneer.contents[1];
+			string auctionItemType <- requestFromAuctioneer.contents[2];
+			Auctioneer auctioneer <- requestFromAuctioneer.contents[3] as Auctioneer;
+			if auctionItemType = interestedInItemType and joinedAuction = nil and THIRST > 10000 and HUNGER > 10000 and money > 0 {
+				// write self.name + ": accepting invitation, item type: " + auctionItemType + ", interest: " + interestedInItemType;
+				do agree with: (message: requestFromAuctioneer, contents: [self.name + ': I will']);
+				joinedAuction <- auctioneer;
 			} else {
-				// write self.name + ": refusing invitation, money: " + money;
-				do refuse with: (message: requestFromDutchAuctioneer, contents: [self.name + ': I won\'t']);
-				joinAuction <- false;
+				// write self.name + ": refusing invitation for item type: " + auctionItemType + ", money: " + money + ", interest: " + interestedInItemType;
+				do refuse with: (message: requestFromAuctioneer, contents: [self.name + ': I won\'t']);
 			}
 		} else if (informType = "end_auction") {
 			// write self.name + ": auction ended"; 
-			joinAuction <- false;
+			Auctioneer auctioneer <- requestFromAuctioneer.contents[1] as Auctioneer;
+			if (joinedAuction != nil and joinedAuction.name = auctioneer.name) {
+				joinedAuction <- nil;
+			}
 		}
 	}
 	
-	reflex gotoAuction when: joinAuction = true and location distance_to auctionLocation > auctionDistanceThreshold - 5
+	reflex gotoAuction when: joinedAuction != nil and location distance_to joinedAuction > auctionDistanceThreshold - 5
 	{
-		do goto target: auctionLocation;
+		do goto target: joinedAuction;
 	}
 	
-	reflex auction when: (!empty(cfps)) {
+	reflex respondToCfp when: (!empty(cfps)) {
 		message cfp <- cfps at 0;
 		list<string> content <- cfp.contents as list<string>;
 		int price <- content at 1 as int;
@@ -298,7 +347,7 @@ species FestivalGuest skills:[moving, fipa]
 			int price <- content at 1 as int;
 			money <- money - price;
 		}
-		joinAuction <- false;
+		joinedAuction <- nil;
 	}
 
 	reflex recieveRejectProposals when: !empty(reject_proposals) {
@@ -307,7 +356,7 @@ species FestivalGuest skills:[moving, fipa]
 			// Read content to remove the message from reject_proposals variable.
 			string dummy <- rejectMsg.contents[0];
 		}
-		joinAuction <- false;
+		joinedAuction <- nil;
 	}
 	
 	aspect base
@@ -351,7 +400,6 @@ species SecurityGuard skills: [moving]
 		draw square(size) color: color;
 	}
 }
-
 
 species InformationCenter
 {
@@ -447,6 +495,7 @@ species Auctioneer skills: [fipa]
 	list<FestivalGuest> allGuests <- agents of_species FestivalGuest;
 	
 	string auctionType; // should be set in sub-species
+	string itemType; // should be set in sub-species
 	bool sold <- false;
 	bool started <- false;
 	bool initiated <- false;
@@ -461,7 +510,7 @@ species Auctioneer skills: [fipa]
 	
 	action announceAuction
 	{		
-		do start_conversation (to :: allGuests, protocol :: 'fipa-request', performative :: 'inform', contents :: ['start_auction', auctionType]);
+		do start_conversation (to :: allGuests, protocol :: 'fipa-request', performative :: 'inform', contents :: ['start_auction', auctionType, itemType, self]);
 	}
 	
 	action cancelAuction
@@ -474,7 +523,7 @@ species Auctioneer skills: [fipa]
 	
 	action endAuction 
 	{
-		do start_conversation (to :: buyers, protocol :: 'fipa-request', performative :: 'inform', contents :: ['end_auction']);
+		do start_conversation (to :: buyers, protocol :: 'fipa-request', performative :: 'inform', contents :: ['end_auction', self]);
 		buyers <- [];
 	}
 	
@@ -490,7 +539,7 @@ species Auctioneer skills: [fipa]
 	}
 
 	reflex notifyAuctionStart when: initiated = false and sold = false {
-		write self.name + ': informing guests of new auction';
+		write self.name + ': informing guests of new auction, item type: ' + itemType;
 		initiated <- true;
 		do announceAuction;
 	}
@@ -521,7 +570,7 @@ species Auctioneer skills: [fipa]
 	}
 
 	reflex startAuction when: initiated = true and started = false and !(empty(buyers))
-		and ((buyers where (each.location distance_to auctionLocation < auctionDistanceThreshold)) contains_all (buyers))
+		and ((buyers where (each.location distance_to self.location < auctionDistanceThreshold)) contains_all (buyers))
 	{	
 		write self.name + ": all guests arrived - starting new auction";
 		tmpPrice <- price;
