@@ -21,8 +21,8 @@ global {
 	int numberOfSecurity <- 1;
 	
 	int initialGuestMoneyMaxRange <- 10000;
-	int initialAuctionPrice <- 20000;
-	int minimumAuctionPrice <- 1000;
+	int initialAuctionPrice <- 200000;
+	int minimumAuctionPrice <- 100000;
 	int auctionDistanceThreshold <- 10;
 	
 	point informationCenterLocation <- {50,75};
@@ -464,6 +464,14 @@ species Auctioneer skills: [fipa]
 		do start_conversation (to :: allGuests, protocol :: 'fipa-request', performative :: 'inform', contents :: ['start_auction', auctionType]);
 	}
 	
+	action cancelAuction
+	{
+		initiated <- false;
+		started <- false;
+		sold <- true;
+		do endAuction;
+	}
+	
 	action endAuction 
 	{
 		do start_conversation (to :: buyers, protocol :: 'fipa-request', performative :: 'inform', contents :: ['end_auction']);
@@ -506,6 +514,7 @@ species Auctioneer skills: [fipa]
 		if (sizeOfAgrees = 0) {
 			// wait until later to start another auction if nobody is interested at this time
 			write self.name + ": cancelling auction, no participants interested";
+			write "";
 			initiated <- false;
 			sold <- true;
 		}
@@ -569,7 +578,8 @@ species DutchAuctioneer parent: Auctioneer
 				do proposePrice;
 			} else {
 				write self.name + ": new price (" + tmpPrice + ") is below the minimum (" + minimumAuctionPrice + ") - cancelling auction";
-				do endAuction;
+				write "";
+				do cancelAuction;
 			}
 		}
 	}
