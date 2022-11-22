@@ -96,7 +96,7 @@ global {
 		}
 		// create SecurityGuard number: numberOfSecurity;
 		
-		create EnglishAuctioneer
+		create SealedBidAuctioneer
 		{
 			location <- {25, 50};
 			itemType <- CD_ITEM_TYPE;
@@ -214,6 +214,36 @@ species FestivalGuest skills:[moving, fipa]
 		string dummy <- rejectMsg.contents[0];
 	}
 	
+	action respondToSealedBidCfp(message cfpMsg) {
+		list<string> content <- cfpMsg.contents as list<string>;
+		if money > 0 {
+			write self.name + ": propsing purchase"; 
+			int proposedPrice <- rnd(money);
+			do propose message: cfpMsg contents: ['buy', proposedPrice];
+		} else {
+		 	write self.name + ": refusing proposal"; 
+			do refuse message: cfpMsg contents: ['im poor', 0];
+		}	
+	}
+	
+	action receiveSealedAcceptProposal(message proposalMsg) {
+		do inform message: proposalMsg contents:["Inform from " + name];
+		write proposalMsg;
+		if proposalMsg.contents[0] = "Congratulations!" {
+			int price <- proposalMsg.contents[1] as int;
+			money <- money - price;
+			joinedAuction <- nil;
+			write self.name +  "Bought for " + price + ", new money = " + money;
+		
+		}
+	}
+	
+	action receiveSealedRejectProposal(message rejectMsg) {
+		// someone else won the auction, unfortunate
+		string dummy <- rejectMsg.contents[0];
+		joinedAuction <- nil;
+	}
+	
 	reflex beIdle when: targetPoint = nil
 	{
 		do wander;
@@ -280,6 +310,7 @@ species FestivalGuest skills:[moving, fipa]
 
 	reflex headTowardInformationCenter when: headingToInfoCenter = true
 	{
+		// IS THIS MISSING?: traversedSteps <- traversedSteps + 1;
 		do goto target: informationCenterLocation;
 	}
 
@@ -395,6 +426,7 @@ species FestivalGuest skills:[moving, fipa]
 			// TODO Keep track of avg. price for winning items in different auctions?
 			int wonPrice <- requestFromAuctioneer.contents[3] as int;
 			money <- money - wonPrice;
+			joinedAuction <- nil;
 		} else if (informType = "end_auction") {
 			// write self.name + ": auction ended"; 
 			Auctioneer auctioneer <- requestFromAuctioneer.contents[1] as Auctioneer;
@@ -413,9 +445,10 @@ species FestivalGuest skills:[moving, fipa]
 		message cfp <- cfps at 0;
 		if (joinedAuction.auctionType = AUCTION_TYPE_DUTCH) {
 			do respondToDutchCfp(cfp);
-		} 
-		else if (joinedAuction.auctionType = AUCTION_TYPE_ENGLISH) {
+		} else if (joinedAuction.auctionType = AUCTION_TYPE_ENGLISH) {
 			do respondToEnglishCfp(cfp);
+		} else if (joinedAuction.auctionType = AUCTION_TYPE_SEALED_LETTER){
+			do respondToSealedBidCfp(cfp);
 		} else {
 			// throw an error if we encounter an unexpected auction type
 			int crash <- 100 / 0;
@@ -429,19 +462,23 @@ species FestivalGuest skills:[moving, fipa]
 				do receiveDutchAcceptProposal(acceptMsg);
 			} else if (joinedAuction.auctionType = AUCTION_TYPE_ENGLISH) {
 				do receiveEnglishAcceptProposal(acceptMsg);
+			} else if (joinedAuction.auctionType = AUCTION_TYPE_SEALED_LETTER){
+				do receiveSealedAcceptProposal(acceptMsg);
 			} else {
 				int crash <- 100/0;
 			}
 		}
 	}
 
-	reflex recieveRejectProposals when: joinedAuction != nil and !empty(reject_proposals) {
+	reflex receiveRejectProposals when: joinedAuction != nil and !empty(reject_proposals) {
 		// write(self.name + ': proposal rejected');		
 		loop rejectMsg over: reject_proposals {
 			if (joinedAuction.auctionType = AUCTION_TYPE_DUTCH) {
 				do receiveDutchRejectProposal(rejectMsg);
 			} else if (joinedAuction.auctionType = AUCTION_TYPE_ENGLISH) {
 				do receiveEnglishRejectProposal(rejectMsg);
+			} else if (joinedAuction.auctionType = AUCTION_TYPE_SEALED_LETTER){
+				do receiveSealedAcceptProposal(rejectMsg);
 			} else {
 				int crash <- 100/0;
 			}
@@ -833,6 +870,90 @@ species EnglishAuctioneer parent: Auctioneer
 	}
 }
 
+species SealedBidAuctioneer parent: Auctioneer{
+	FestivalGuest highestBidder <- nil;
+	int highestBidAmt <- 0;
+	int tmpPrice <- -1;
+	
+	init {
+		auctionType <- AUCTION_TYPE_SEALED_LETTER;
+	}
+	
+	action informWinner
+	{
+		do start_conversation (to :: [highestBidder], protocol :: 'fipa-request', performative :: 'inform', contents :: ['won_auction', auctionType, itemType, highestBidAmt] );
+		highestBidder <- nil;
+		highestBidAmt <- 0;
+		do endAuction;
+	}
+	
+	action cancelSealedBid
+	{
+		highestBidder <- nil;
+		highestBidAmt <- 0;
+		do cancelAuction;
+	}
+	
+	reflex startAuction when: initiated = true and started = false and !(empty(buyers))
+		and ((buyers where (each.location distance_to self.location < auctionDistanceThreshold)) contains_all (buyers))
+	{	
+		write self.name + ": all guests arrived - starting new auction";
+		started <- true;
+		do proposePrice([nil]);
+	} 
+	
+	reflex readProposals when: started = true and !(empty(proposes)) {
+		int proposalsSize <- length(proposes);
+		message currHighest <- nil;
+		list<message> messages <- [];
+		
+		
+		loop proposeMsg over: proposes {
+			messages <- messages + proposeMsg;
+			if currHighest.contents = nil {
+				currHighest <- proposeMsg;
+			}
+			write currHighest;
+			if (proposeMsg.contents[1] as int) > (currHighest.contents[1] as int) {
+				currHighest <- proposeMsg;
+			}
+			string dummy <- proposeMsg.contents;
+			
+		}
+		
+		
+		if (currHighest.sender as agent).name != self.name {
+			loop proposeMsg over: messages {
+				if proposeMsg = currHighest {
+					highestBidder <- proposeMsg.sender;
+					highestBidAmt <- proposeMsg.contents[1] as int;
+					write self.name + ": accepting proposal from " + proposeMsg.sender + ", price: " + proposeMsg.contents[1];
+					do accept_proposal message: proposeMsg contents: ["Congratulations!", proposeMsg.contents[1]];
+				} else {
+					do reject_proposal message: proposeMsg contents: ["Too slow"];
+				}
+				string dummy <- proposeMsg.contents;
+				
+			}
+		} else {
+			do cancelSealedBid;
+		}
+		
+		write "";
+		sold <- true;
+		started <- false;
+		do endAuction;
+	}
+	
+	float size <- 2.0;
+	aspect base
+	{
+		draw circle(size) color: color;
+	}
+	
+}
+
+
 experiment festival type: gui {
 	output {
 		display main_display {
@@ -844,6 +965,7 @@ experiment festival type: gui {
 			species SecurityGuard aspect: base;
 			species DutchAuctioneer aspect: base;
 			species EnglishAuctioneer aspect: base;
+			species SealedBidAuctioneer aspect: base;
 		}
 	}
 }
