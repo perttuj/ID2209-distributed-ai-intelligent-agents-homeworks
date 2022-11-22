@@ -32,11 +32,11 @@ global {
 	string AUCTION_TYPE_SEALED_LETTER <- "SEALED_AUCTION";
 	
 	string CD_ITEM_TYPE <- "CD_ITEM_TYPE";
-	int CD_ITEM_LIMIT_MAX <- 8000;
+	int CD_ITEM_LIMIT_MAX <- 10000;
 	rgb CD_ITEM_COLOR <- #teal;
 	
 	string CLOTHING_ITEM_TYPE <- "CLOTHING_ITEM_TYPE";
-	int CLOTHING_ITEM_LIMIT_MAX <- 5000;
+	int CLOTHING_ITEM_LIMIT_MAX <- 10000;
 	rgb CLOTHING_ITEM_COLOR <- #orange;
 
 	string VIP_TICKET_ITEM_TYPE <- "VIP_TICKET_ITEM_TYPE";
@@ -95,26 +95,26 @@ global {
 			location <- informationCenterLocation;
 		}
 		// create SecurityGuard number: numberOfSecurity;
-		
+
 		create SealedBidAuctioneer
 		{
 			location <- {25, 50};
 			itemType <- CD_ITEM_TYPE;
 			color <- CD_ITEM_COLOR;
 		}
-		/*
+
 		create EnglishAuctioneer
 		{
 			location <- {50, 50};
 			itemType <- VIP_TICKET_ITEM_TYPE;
 			color <- VIP_ITEM_COLOR;
 		}
-		create EnglishAuctioneer
+		create DutchAuctioneer
 		{
-			location <- {75, 50};
+			location <- {75, 50, 25};
 			itemType <- CLOTHING_ITEM_TYPE;
 			color <- CLOTHING_ITEM_COLOR;
-		} */
+		}
 	}
 }
 
@@ -166,12 +166,14 @@ species FestivalGuest skills:[moving, fipa]
 		list<string> content <- proposalMsg.contents[0] as list<string>;
 		int price <- content at 1 as int;
 		money <- money - price;
+		write self.name + ": dutch accept proposal!";
 		joinedAuction <- nil;
 	}
 	
 	action receiveDutchRejectProposal(message rejectMsg) {
 		// someone else won the auction, unfortunate
 		string dummy <- rejectMsg.contents[0];
+		write self.name + ": dutch reject proposal!";
 		joinedAuction <- nil;
 	}
 	
@@ -217,11 +219,11 @@ species FestivalGuest skills:[moving, fipa]
 	action respondToSealedBidCfp(message cfpMsg) {
 		list<string> content <- cfpMsg.contents as list<string>;
 		if money > 0 {
-			write self.name + ": propsing purchase"; 
+			// write self.name + ": propsing purchase"; 
 			int proposedPrice <- rnd(money);
 			do propose message: cfpMsg contents: ['buy', proposedPrice];
 		} else {
-		 	write self.name + ": refusing proposal"; 
+		 	// write self.name + ": refusing proposal"; 
 			do refuse message: cfpMsg contents: ['im poor', 0];
 		}	
 	}
@@ -229,18 +231,16 @@ species FestivalGuest skills:[moving, fipa]
 	action receiveSealedAcceptProposal(message proposalMsg) {
 		do inform message: proposalMsg contents:["Inform from " + name];
 		write proposalMsg;
-		if proposalMsg.contents[0] = "Congratulations!" {
-			int price <- proposalMsg.contents[1] as int;
-			money <- money - price;
-			joinedAuction <- nil;
-			write self.name +  "Bought for " + price + ", new money = " + money;
-		
-		}
+		int price <- proposalMsg.contents[1] as int;
+		money <- money - price;
+		write self.name +  "Bought for " + price + ", new money = " + money;
+		joinedAuction <- nil;
 	}
 	
 	action receiveSealedRejectProposal(message rejectMsg) {
 		// someone else won the auction, unfortunate
 		string dummy <- rejectMsg.contents[0];
+		// write self.name + ": sealed reject proposal";
 		joinedAuction <- nil;
 	}
 	
@@ -314,7 +314,7 @@ species FestivalGuest skills:[moving, fipa]
 		do goto target: informationCenterLocation;
 	}
 
-	reflex imHungryOrThirsty when: (THIRST < 3 or HUNGER < 3) and targetPoint = nil and headingToInfoCenter = false
+	reflex imHungryOrThirsty when: joinedAuction = nil and (THIRST < 3 or HUNGER < 3) and targetPoint = nil and headingToInfoCenter = false
 	{
 		bool isThirsty <- THIRST < 3 and HUNGER >= 3;
 		bool isHungry <- THIRST >= 3 and HUNGER < 3;
@@ -478,7 +478,7 @@ species FestivalGuest skills:[moving, fipa]
 			} else if (joinedAuction.auctionType = AUCTION_TYPE_ENGLISH) {
 				do receiveEnglishRejectProposal(rejectMsg);
 			} else if (joinedAuction.auctionType = AUCTION_TYPE_SEALED_LETTER){
-				do receiveSealedAcceptProposal(rejectMsg);
+				do receiveSealedRejectProposal(rejectMsg);
 			} else {
 				int crash <- 100/0;
 			}
@@ -648,12 +648,19 @@ species Auctioneer skills: [fipa]
 		do endAuction;
 	}
 	
-	action endAuction 
+	action resetValues
 	{
-		do start_conversation (to :: buyers, protocol :: 'fipa-request', performative :: 'inform', contents :: ['end_auction', self]);
 		buyers <- [];
 		started <- false;
 		sold <- true;
+	}
+	
+	action endAuction
+	{
+		if length(buyers) > 0 {
+			do start_conversation (to :: buyers, protocol :: 'fipa-request', performative :: 'inform', contents :: ['end_auction', self]);	
+		}
+		do resetValues;
 	}
 	
 	reflex startNewAuction when: started = false and sold = true {
@@ -715,12 +722,17 @@ species DutchAuctioneer parent: Auctioneer
 	reflex readProposals when: started = true and !(empty(proposes)) {
 		int proposalsSize <- length(proposes);
 		bool accepted <- false;
+
+		write self.name + ": reading proposals (proposed/rejected): " + proposalsSize + " buyers: " + length(buyers);
+		
 		loop proposeMsg over: proposes {
+			buyers <- buyers - proposeMsg.sender;
 			if (accepted = false) {
 				accepted <- true;
 				write self.name + ": accepting proposal from " + proposeMsg.sender + ", price: " + tmpPrice;
 				do accept_proposal message: proposeMsg contents: ["Congratulations!"];
 			} else {
+				write self.name + ": rejecting proposal";
 				do reject_proposal message: proposeMsg contents: ["Too slow"];
 			}
 			
@@ -730,6 +742,7 @@ species DutchAuctioneer parent: Auctioneer
 		write "";
 		sold <- true;
 		started <- false;
+		
 		do endAuction;
 	}
 	
@@ -918,9 +931,7 @@ species SealedBidAuctioneer parent: Auctioneer{
 				currHighest <- proposeMsg;
 			}
 			string dummy <- proposeMsg.contents;
-			
 		}
-		
 		
 		if (currHighest.sender as agent).name != self.name {
 			loop proposeMsg over: messages {
@@ -932,23 +943,14 @@ species SealedBidAuctioneer parent: Auctioneer{
 				} else {
 					do reject_proposal message: proposeMsg contents: ["Too slow"];
 				}
-				string dummy <- proposeMsg.contents;
 				
 			}
+		
+			write "";
+			do resetValues;
 		} else {
 			do cancelSealedBid;
 		}
-		
-		write "";
-		sold <- true;
-		started <- false;
-		do endAuction;
-	}
-	
-	float size <- 2.0;
-	aspect base
-	{
-		draw circle(size) color: color;
 	}
 	
 }
