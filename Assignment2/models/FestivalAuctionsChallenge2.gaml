@@ -166,14 +166,14 @@ species FestivalGuest skills:[moving, fipa]
 		list<string> content <- proposalMsg.contents[0] as list<string>;
 		int price <- content at 1 as int;
 		money <- money - price;
-		write self.name + ": dutch accept proposal!";
+		// write self.name + ": dutch accept proposal!";
 		joinedAuction <- nil;
 	}
 	
 	action receiveDutchRejectProposal(message rejectMsg) {
 		// someone else won the auction, unfortunate
 		string dummy <- rejectMsg.contents[0];
-		write self.name + ": dutch reject proposal!";
+		// write self.name + ": dutch reject proposal!";
 		joinedAuction <- nil;
 	}
 	
@@ -230,10 +230,10 @@ species FestivalGuest skills:[moving, fipa]
 	
 	action receiveSealedAcceptProposal(message proposalMsg) {
 		do inform message: proposalMsg contents:["Inform from " + name];
-		write proposalMsg;
+		// write proposalMsg;
 		int price <- proposalMsg.contents[1] as int;
 		money <- money - price;
-		write self.name +  "Bought for " + price + ", new money = " + money;
+		// write self.name +  ": Bought for " + price + ", new money = " + money;
 		joinedAuction <- nil;
 	}
 	
@@ -248,8 +248,8 @@ species FestivalGuest skills:[moving, fipa]
 	{
 		do wander;
 		
-		if (flip(0.01)) {
-			money <- money + rnd(1);	
+		if (money < initialGuestMoneyMaxRange) {
+			money <- money + (rnd(initialGuestMoneyMaxRange - money));	
 		}
 		
 		/*if (flip(0.001)) {
@@ -405,7 +405,7 @@ species FestivalGuest skills:[moving, fipa]
 		}
 	}
 	
-	reflex answerInvitation when: (!empty(informs))
+	reflex receiveInforms when: (!empty(informs))
 	{
 		message requestFromAuctioneer <- informs[0];
 		string informType <- requestFromAuctioneer.contents[0];
@@ -423,7 +423,6 @@ species FestivalGuest skills:[moving, fipa]
 				do refuse with: (message: requestFromAuctioneer, contents: [self.name + ': I won\'t']);
 			}
 		} else if (informType = "won_auction") {
-			// TODO Keep track of avg. price for winning items in different auctions?
 			int wonPrice <- requestFromAuctioneer.contents[3] as int;
 			money <- money - wonPrice;
 			joinedAuction <- nil;
@@ -726,7 +725,7 @@ species DutchAuctioneer parent: Auctioneer
 		int proposalsSize <- length(proposes);
 		bool accepted <- false;
 
-		write self.name + ": reading proposals (proposed/rejected): " + proposalsSize + " buyers: " + length(buyers);
+		write self.name + ": reading proposals: " + proposalsSize + " buyers: " + length(buyers);
 		
 		loop proposeMsg over: proposes {
 			buyers <- buyers - proposeMsg.sender;
@@ -837,6 +836,7 @@ species EnglishAuctioneer parent: Auctioneer
 				write self.name + ": no bids received, cancelling auction. initial price: " + tmpPrice;
 				do cancelEnglishAuction;
 			}
+			write "";
 			return;
 		}
 		
