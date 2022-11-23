@@ -629,6 +629,9 @@ species Auctioneer skills: [fipa]
 	float size <- 2.0;
 	rgb color <- #red;
 	
+	float avg <- 0.0;
+	int nSold <- 0;
+	
 	action proposePrice(list content)
 	{
 		list<string> defaultContent <- ['price', tmpPrice];
@@ -731,6 +734,10 @@ species DutchAuctioneer parent: Auctioneer
 				accepted <- true;
 				write self.name + ": accepting proposal from " + proposeMsg.sender + ", price: " + tmpPrice;
 				do accept_proposal message: proposeMsg contents: ["Congratulations!"];
+				avg <- (avg * nSold + tmpPrice) / (nSold + 1);
+				nSold <- nSold + 1;
+				write name + " Average selling price: " + avg + "; Sold " + nSold + " items.";
+				
 			} else {
 				write self.name + ": rejecting proposal";
 				do reject_proposal message: proposeMsg contents: ["Too slow"];
@@ -814,7 +821,7 @@ species EnglishAuctioneer parent: Auctioneer
 			string dummy <- refuseMsg.contents[0];
 		}
 		
-		write self.name + ": reading proposals (proposed/rejected): " + proposalsSize + "/" + lengthOfRefuses + " buyers: " + length(buyers);
+		// write self.name + ": reading proposals (proposed/rejected): " + proposalsSize + "/" + lengthOfRefuses + " buyers: " + length(buyers);
 		
 		// this means that nobody submitted a new bid,
 		// so the previously highest bidder has won
@@ -822,6 +829,9 @@ species EnglishAuctioneer parent: Auctioneer
 			if (highestBidder != nil) {
 				// write self.name + ": winner found - " + highestBidder.sender + "; price: " + highestBidder.contents[1];
 				write self.name + ": winner found - " + highestBidder + " for price: " + highestBidAmt;
+				avg <- (avg * nSold + highestBidAmt) / (nSold + 1);
+				nSold <- nSold + 1;
+				write name + " Average selling price: " + avg + "; Sold " + nSold + " items.";
 				do informWinner;
 			} else {
 				write self.name + ": no bids received, cancelling auction. initial price: " + tmpPrice;
@@ -838,7 +848,7 @@ species EnglishAuctioneer parent: Auctioneer
 		loop proposeMsg over: proposes {
 			list<string> proposeContent <- proposeMsg.contents as list<string>;
 			int proposedPrice <- proposeContent[1] as int;
-			write self.name + ": proposal received from: " + proposeMsg.sender + "; price: " + proposeMsg.contents[1];
+			// write self.name + ": proposal received from: " + proposeMsg.sender + "; price: " + proposeMsg.contents[1];
 			if ((highestBid.sender as agent).name = self.name or (highestBid.contents[1] as int) < proposedPrice) {
 				if ((highestBid.sender as agent).name != self.name) {
 					rejectedMessages <- rejectedMessages + highestBid;
@@ -859,8 +869,8 @@ species EnglishAuctioneer parent: Auctioneer
 		
 		if highestBidSender.name != self.name {
 			int bidAmt <- highestBid.contents[1] as int;
-			write self.name + ": highest bid so far: " + highestBidSender + "; price: " + bidAmt + " - initiating another round of bidding.";
-			write "";
+			// write self.name + ": highest bid so far: " + highestBidSender + "; price: " + bidAmt + " - initiating another round of bidding.";
+			// write "";
 			do accept_proposal message: highestBid contents: ["you're the highest bid so far!"];
 			highestBidder <- highestBid.sender;
 			highestBidAmt <- bidAmt;
@@ -926,7 +936,6 @@ species SealedBidAuctioneer parent: Auctioneer{
 			if currHighest.contents = nil {
 				currHighest <- proposeMsg;
 			}
-			write currHighest;
 			if (proposeMsg.contents[1] as int) > (currHighest.contents[1] as int) {
 				currHighest <- proposeMsg;
 			}
@@ -940,6 +949,9 @@ species SealedBidAuctioneer parent: Auctioneer{
 					highestBidAmt <- proposeMsg.contents[1] as int;
 					write self.name + ": accepting proposal from " + proposeMsg.sender + ", price: " + proposeMsg.contents[1];
 					do accept_proposal message: proposeMsg contents: ["Congratulations!", proposeMsg.contents[1]];
+					avg <- (avg * nSold + highestBidAmt) / (nSold + 1);
+					nSold <- nSold + 1;
+					write name + " Average selling price: " + avg + "; Sold " + nSold + " items.";
 				} else {
 					do reject_proposal message: proposeMsg contents: ["Too slow"];
 				}
