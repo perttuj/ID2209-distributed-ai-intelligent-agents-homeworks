@@ -8,8 +8,8 @@
 model NQueensTest
 
 global {
-	int numberOfQueens <- 12;
-	int NboardDimensions <- 12;
+	int numberOfQueens <- 16;
+	int NboardDimensions <- 16;
 	
 	int index <- 0;
 	
@@ -169,15 +169,7 @@ species Queen skills: [fipa] {
 		int nextRow <- row;
 		int nextCol <- col + 1;
 		if (nextCol >= NboardDimensions) {
-			nextRow <- nextRow + 1;
 			nextCol <- 0;
-		}
-		// if we've passed through all the rows, just return nil
-		if (nextRow >= NboardDimensions) {
-			if debug = true {
-				write self.name + ": next pos for (" + row + "," + col + ") = [nil, nil]";
-			}
-			return [-1, -1];
 		}
 		if debug = true {
 			write self.name + ": next pos for (" + row + "," + col + ") = (" + nextRow + "," + nextCol + ")";
@@ -195,9 +187,9 @@ species Queen skills: [fipa] {
 			// if we're the first queen, generate a new position ourselves.
 			// if we cannot find one, we've reached the end of the board and can exit
 			list<int> nextPos <- getNextPosition(currRow, currCol);
-			int nextRow <- nextPos[0];
+			int nextRow <- nextPos[0]; // will always be the same row
 			int nextCol <- nextPos[1];
-			if nextRow = -1 or nextCol -1 {
+			if nextCol = 0 {
 				write self.name + ": cannot generated new position, end of board reached. ROW / COL / NboardDimensions: " + currRow + "/" + currCol + "/" + NboardDimensions; 
 				int crash <- 100 / 0;
 			}
@@ -208,7 +200,7 @@ species Queen skills: [fipa] {
 			do updateOccupationCell(nextRow, nextCol, true);
 			myCell <- newCell;
 			location <- newCell.location;
-			list<int> succPos <- getNextPosition(nextRow, nextCol);
+			list<int> succPos <- getNextPosition(nextRow + 1, nextCol + 1);
 			int succRow <- succPos[0];
 			int succCol <- succPos[1];
 			if debug = true {
@@ -243,7 +235,7 @@ species Queen skills: [fipa] {
 			}
 			do askForNewPosition(cellRow, cellColumn);
 		} else {
-			list<int> pos <- getNextPosition(cellRow, cellColumn);
+			list<int> pos <- getNextPosition(cellRow + 1, cellColumn + 1);
 			int successorRow <- pos[0];
 			int successorCol <- pos[1];
 			if (succ != nil) {
@@ -263,6 +255,7 @@ species Queen skills: [fipa] {
 				do informOfNewPosition(successorRow, successorCol);
 			} else {
 				do prettyPrintMatrix;
+				do updateBoardCellOccupation(newCell, false);
 				// keep looking for new formations
 				do askForNewPosition(cellRow, cellColumn);
 			}
@@ -299,7 +292,7 @@ species Queen skills: [fipa] {
 		// left to place, there is no point in even trying - there are too few rows left,
 		// so we should just ask our predecessor for a new position
 		bool runningOutOfSpace <- NboardDimensions - nextCellRow < remainingQueens - 1;
-		if (nextCellRow = -1 or nextCellCol = -1 or runningOutOfSpace) { // 
+		if (nextCellCol = myCell.grid_x or runningOutOfSpace) {
 			do updateBoardCellOccupation(myCell, false);
 			int currRow <- myCell.grid_y as int;
 			int currCol <- myCell.grid_x as int;
