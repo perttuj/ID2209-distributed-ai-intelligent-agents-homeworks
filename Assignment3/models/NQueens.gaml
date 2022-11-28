@@ -1,10 +1,9 @@
 /**
-* Name: NQueensTest
+* Name: NQueens
 * Based on the internal empty template. 
-* Author: perttuj
+* Author: perttuj & GGMorello
 * Tags: 
 */
-
 
 model NQueensTest
 
@@ -48,6 +47,25 @@ species Queen skills: [fipa] {
 	}
 
 	/** ACTIONS */
+	action prettyPrintMatrix
+	{
+		write "Queen formation found:";
+		loop row over: range(NboardDimensions - 1)
+		{
+			string s <- "";
+			loop column over: range(NboardDimensions - 1)
+			{
+				bool cell <- getOccupationCell(row, column);
+				if (cell = true) {
+					s <- s + "1 ";
+				} else {
+					s <- s + "0 ";
+				}
+			}
+			write s;
+		}
+	}
+	
 	bool getOccupationCell(int row, int col) {
 		// the matrix uses the first index to specify columns,
 		// and the second for rows - so we reverse the arguments
@@ -169,7 +187,9 @@ species Queen skills: [fipa] {
 	
 	action askForNewPosition(int currRow, int currCol) {
 		location <- initialQueenPosition;
-		write self.name + ": asking for new position";
+		if debug = true {
+			write self.name + ": asking for new position";	
+		}
 		myCell <- nil;
 		if (pred = nil) {
 			// if we're the first queen, generate a new position ourselves.
@@ -241,12 +261,19 @@ species Queen skills: [fipa] {
 			do updateBoardCellOccupation(newCell, true);
 			if (succ != nil) {
 				do informOfNewPosition(successorRow, successorCol);
+			} else {
+				do prettyPrintMatrix;
+				// keep looking for new formations
+				do askForNewPosition(cellRow, cellColumn);
 			}
 		}
 	}
 	
 	reflex initializeFirstQueen when: id != nil and id = 0 and myCell = nil and succ != nil {
-		write self.name + ": Initializing first queen";
+		if debug = true
+		{
+			write self.name + ": Initializing first queen";
+		}
 		myCell <- getBoardCell(0, 0);
 		location <- myCell.location;
 		do updateBoardCellOccupation(myCell, true);
@@ -265,7 +292,14 @@ species Queen skills: [fipa] {
 			write self.name + ": assigning new position, prev: (" + prevCellRow + "," + prevCellCol + "), next: (" + nextCellRow + "," + nextCellCol + ")";
 		}
 		
-		if nextCellRow = -1 or nextCellCol = -1 {
+		int remainingQueens <- numberOfQueens - id;
+		// since we're placing queens on the next row each time, we can avoid a lot of
+		// repetitive checks if we just stop attempting to place queens when we're running
+		// out of space. For example, on a 4x4 board, if we're on row 3/4 and have 3 queens
+		// left to place, there is no point in even trying - there are too few rows left,
+		// so we should just ask our predecessor for a new position
+		bool runningOutOfSpace <- NboardDimensions - nextCellRow < remainingQueens - 1;
+		if (nextCellRow = -1 or nextCellCol = -1 or runningOutOfSpace) { // 
 			do updateBoardCellOccupation(myCell, false);
 			int currRow <- myCell.grid_y as int;
 			int currCol <- myCell.grid_x as int;
