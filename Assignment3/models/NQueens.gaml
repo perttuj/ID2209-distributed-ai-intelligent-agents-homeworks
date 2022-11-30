@@ -8,8 +8,8 @@
 model NQueensTest
 
 global {
-	int numberOfQueens <- 16;
-	int NboardDimensions <- 16;
+	int numberOfQueens <- 20;
+	int NboardDimensions <- 20;
 	
 	int index <- 0;
 	

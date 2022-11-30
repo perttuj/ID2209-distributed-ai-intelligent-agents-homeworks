@@ -1,11 +1,11 @@
 /**
-* Name: NQueens
+* Name: FestivalStages
 * Based on the internal empty template. 
 * Author: perttuj & GGMorello
 * Tags: 
 */
 
-model Task2
+model FestivalStages
 
 global {
 	int numberOfPeople <- 21;
@@ -32,6 +32,8 @@ global {
 	rgb stagePresenceColor <- #orange;
 	rgb vfxColor <- #pink;
 	
+	string ROTATE_STAGE <- "rotate_stage";
+	
 	init {
 		create Stage number: 1
 		{
@@ -49,10 +51,7 @@ global {
 		{
 			location <- {95, 0};
 		}
-		create FestivalGuest number: numberOfPeople
-		{
-			// TODO assing random utility
-		}
+		create FestivalGuest number: numberOfPeople;
 
 		create FoodStore number: 1
 		{
@@ -134,8 +133,8 @@ species FestivalGuest skills:[moving, fipa]
 		list<float> ratioValues <- [bandValue, dancersValue, lightsValue, soundValue, stageValue, vfxValue];
 		float allValuesSum <- sum(ratioValues);
 		if debug = true {
-			write self.name + ": ratio for stage " + s.name + ", ratio values order = band, dancers, lightshow, sound, stage, vfx";
-			write self.name + ": stage ratio values = " + ratioValues + ", sum: " + allValuesSum;
+			// write self.name + ": ratio values order = band, dancers, lightshow, sound, stage, vfx";
+			// write self.name + ": stage " + s.name + " ratio values = " + ratioValues + ", sum: " + allValuesSum;
 		}
 		return allValuesSum;
 	}
@@ -154,16 +153,33 @@ species FestivalGuest skills:[moving, fipa]
 			}
 		}
 		if debug = true {
-			write self.name + ": best stage: " + maxStage.name + ", util: " + currentMax;
-			write "";
+			write self.name + ": new best stage: " + maxStage.name + ", util: " + currentMax;
 		}
-		
+		color <- maxStage.color;
 		currentStage <- maxStage;
 	}
 	
 	reflex beIdle when: targetPoint = nil
 	{
-		do wander;
+		if headingToInfoCenter = true 
+		{
+			do goto target: informationCenterLocation;
+		}
+		else if currentStage != nil
+		{
+			if location distance_to(currentStage) < 10
+			{
+				do wander;
+			}
+			else 
+			{
+				do goto target: currentStage;	
+			}
+		} 
+		else 
+		{
+			do wander;	
+		}
 	}
 
 	reflex moveToTarget when: targetPoint != nil
@@ -185,13 +201,6 @@ species FestivalGuest skills:[moving, fipa]
 			}
 		}
 		targetPoint <- nil;
-		color <- #blue;
-	}
-
-	reflex headTowardInformationCenter when: headingToInfoCenter = true
-	{
-		// IS THIS MISSING?: traversedSteps <- traversedSteps + 1;
-		do goto target: informationCenterLocation;
 	}
 
 	reflex imHungryOrThirsty when: (THIRST < 3 or HUNGER < 3) and targetPoint = nil and headingToInfoCenter = false
@@ -199,19 +208,6 @@ species FestivalGuest skills:[moving, fipa]
 		bool isThirsty <- THIRST < 3 and HUNGER >= 3;
 		bool isHungry <- THIRST >= 3 and HUNGER < 3;
 		bool isHungryAndThirsty <- THIRST < 3 and HUNGER < 3;
-
-		if isThirsty
-		{
-			color <- #yellow;
-		} 
-		else if isHungry
-		{
-			color <- #red;
-		}
-		else if isHungryAndThirsty
-		{
-			color <- #orange;
-		}
 
 		if flip(0.8) {
 			if isHungryAndThirsty {
@@ -288,8 +284,49 @@ species FestivalGuest skills:[moving, fipa]
 	reflex receiveInforms when: (!empty(informs))
 	{
 		message receivedInform <- informs[0];
-		string content <- receivedInform.contents[0];
-		// TODO handle content
+		list content <- receivedInform.contents;
+		if content[0] = ROTATE_STAGE
+		{
+			Stage s <- content[1] as Stage;
+			float newUtil <- calculateStageUtility(s);
+			if currentStage = nil
+			{
+				currentStage <- s;
+				color <- s.color;	
+				return;
+			}
+			if currentStage.name = s.name
+			{
+				// if the stage we're at is changing the performer,
+				// we need to re-evaluate the global state and find
+				// the best possible stage for us
+				if debug = true
+				{
+					write self.name + ": current stage changed performers, calculating new best stage";
+				}
+				do calculateBestStage;
+				return;
+			}
+			// else, check if the stage that rotated performers
+			// has higher utility than the stage we're currently at	
+			float currentUtil <- calculateStageUtility(currentStage);
+			if (newUtil > currentUtil)
+			{
+				if debug = true 
+				{
+					write self.name + ": rotating to new stage, current: " + currentStage.name + " (" + currentUtil + "), new stage: " + s.name + " (" + newUtil + ")";
+				}
+				currentStage <- s;
+				color <- s.color;
+			} 
+			else 
+			{
+				if debug = true 
+				{
+					write self.name + ": NOT rotating to new stage, current: " + currentStage.name + " (" + currentUtil + "), new stage: " + s.name + " (" + newUtil + ")";
+				}
+			}
+		}
 	}
 	
 	aspect base
@@ -351,7 +388,7 @@ species DrinkFoodStore parent: Store
 	}
 }
 
-species Stage {
+species Stage skills: [fipa] {
 	float bandRatio <- 0.0;
 	float dancersRatio <- 0.0;
 	float lightShowRatio <- 0.0;
@@ -419,15 +456,20 @@ species Stage {
 				color <- vfxColor;
 			}
 		}
+		list<FestivalGuest> allGuests <- agents of_species FestivalGuest;
+		// we might not yet have any guests at the festival
+		if length(allGuests) > 0
+		{
+			do start_conversation (to :: allGuests, protocol :: 'fipa-request', performative :: 'inform', contents :: [ROTATE_STAGE, self]);	
+		}
 	}
-	
 	
 	reflex idleStage
 	{
 		list<FestivalGuest> guests <- agents of_species FestivalGuest;
 		// occasionally rotate the current concert
 		// so that guests have to change stages
-		if (flip(0.001))
+		if (flip(0.0001))
 		{
 			if (debug = true) {
 				write self.name + ": rotating to new concert ";
