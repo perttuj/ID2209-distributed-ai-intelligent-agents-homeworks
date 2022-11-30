@@ -156,7 +156,7 @@ species Leader skills: [fipa]
 			densities[maxIndex] <- densities[maxIndex] + 1;
 		}
 		
-		if globalUtility > highestUtility
+		if globalUtility > highestUtility and rounds != 1
 		{
 			highestUtility <- globalUtility;
 			highestUtilityMessages <- messages;
@@ -164,16 +164,17 @@ species Leader skills: [fipa]
 		}
 		
 		if rounds < 5 {
-			write self.name + ": sending another round of negotiations";
+			write self.name + ": sending another round of negotiations, highest util: " + highestUtility;
 			list<FestivalGuest> guests <- agents of_species FestivalGuest;
 			do start_conversation (to :: guests, protocol :: 'fipa-contract-net', performative :: 'cfp', contents :: [COORDINATION_CFP, densities]);
 		} else {
+			write self.name + ": highest utility messages: " + highestUtilityMessages;
 			loop i from: 0 to: length(highestUtilityMessages) - 1
 			{
 				message msg <- highestUtilityMessages[i];
 				int maxIndex <- 0;
-				int maxUtil <- 0;
-				list<int> guestUtils <- msg.contents[0];
+				float maxUtil <- 0;
+				list<float> guestUtils <- msg.contents[0];
 				loop j from: 0 to: 3
 				{
 					if guestUtils[j] > maxUtil
