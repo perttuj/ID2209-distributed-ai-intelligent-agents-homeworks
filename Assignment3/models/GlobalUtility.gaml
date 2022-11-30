@@ -24,6 +24,7 @@ global {
 	
 	float initRatioMaxValue <- 1.0;
 	int ratioPrecision <- 4;
+	float crowdRatioOffset <- 3.0;
 
 	rgb bandColor <- #black;
 	rgb dancersColor <- #red;
@@ -35,8 +36,10 @@ global {
 	string START_COORDINATION <- "start_coordination";
 	string COORDINATION_CFP <- "coordination_cfp";
 	string ROTATE_STAGE <- "rotate_stage";
+	string GO_TO_STAGE <- "go_to_stage";
 	
 	init {
+		create Leader number: 1;
 		create Stage number: 1
 		{
 			location <- {20, 0};
@@ -55,11 +58,11 @@ global {
 		}
 		create FestivalGuest number: 2*numberOfPeople / 3
 		{
-			densityRatio <- 0.9;
+			prefersCrowds <- true;
 		}
 		create FestivalGuest number: numberOfPeople / 3
 		{
-			densityRatio <- 0.1;
+			prefersCrowds <- false;
 		}
 
 		create FoodStore number: 1
@@ -93,6 +96,103 @@ global {
 	}
 }
 
+species Leader skills: [fipa]
+{
+	int rounds <- 0;
+	bool rotationInProgress <- false;
+	list<message> highestUtilityMessages <- [];
+	float highestUtility <- 0.0;
+	list<int> highestDensities <- [];
+	
+	reflex receiveInforms when: !empty(informs)
+	{
+		message receivedInform <- informs[0];
+		list content <- receivedInform.contents;
+		string messageType <- content[0];
+		switch messageType
+		{
+			match ROTATE_STAGE
+			{
+				// when some stage rotates, the leader will
+				// initialize a new election to determine
+				// which guests go to which stage
+				if !rotationInProgress
+				{
+					write self.name + ": starting coordination";
+					list<FestivalGuest> guests <- agents of_species FestivalGuest;
+					do start_conversation (to :: guests, protocol :: 'fipa-contract-net', performative :: 'cfp', contents :: [START_COORDINATION]);
+				}
+			}
+			default
+			{
+				write self.name + ": unexpected inform received " + receivedInform;
+			}
+		}
+	}
+	
+	
+	reflex receiveProposals when: !empty(proposes)
+	{
+		rounds <- rounds + 1;
+		list<int> densities <- [0,0,0,0];
+		list<message> messages <- [];
+		float globalUtility <- 0.0;
+		loop i from: 0 to: length(proposes) - 1 {
+			message msg <- proposes[0];
+			messages <- messages + msg;
+			list content <- proposes[0].contents;
+			list<float> stageUtils <- content[0];
+			int maxIndex <- -1;
+			float maxUtil <- -1.0;
+			loop j from: 0 to: length(stageUtils) - 1
+			{
+				if stageUtils[j] > maxUtil {
+					maxUtil <- stageUtils[j];
+					maxIndex <- j;
+				}
+			}
+			// keep track of the highest utility from each guest
+			globalUtility <- maxUtil;
+			densities[maxIndex] <- densities[maxIndex] + 1;
+		}
+		
+		if globalUtility > highestUtility
+		{
+			highestUtility <- globalUtility;
+			highestUtilityMessages <- messages;
+			highestDensities <- densities;
+		}
+		
+		if rounds < 5 {
+			write self.name + ": sending another round of negotiations";
+			list<FestivalGuest> guests <- agents of_species FestivalGuest;
+			do start_conversation (to :: guests, protocol :: 'fipa-contract-net', performative :: 'cfp', contents :: [COORDINATION_CFP, densities]);
+		} else {
+			loop i from: 0 to: length(highestUtilityMessages) - 1
+			{
+				message msg <- highestUtilityMessages[i];
+				int maxIndex <- 0;
+				int maxUtil <- 0;
+				list<int> guestUtils <- msg.contents[0];
+				loop j from: 0 to: 3
+				{
+					if guestUtils[j] > maxUtil
+					{
+						maxIndex <- j;
+						maxUtil <- guestUtils[j];
+					}
+				}
+				do start_conversation (to :: [msg.sender], protocol :: 'fipa-request', performative :: 'inform', contents :: [GO_TO_STAGE, maxIndex, highestDensities]);	
+			}
+			rounds <- 0;
+			highestUtilityMessages <- [];
+			highestUtility <- 0.0;
+			highestDensities <- [];
+		}
+	}
+	
+}
+
 species FestivalGuest skills:[moving, fipa]
 {
 	int THIRST <- 100000 update: THIRST - rnd(100);
@@ -104,10 +204,8 @@ species FestivalGuest skills:[moving, fipa]
 	list<point> memoFood;
 	list<point> memoDrinkFood;
 	
-	bool isLeader <- false;
 	Stage currentStage <- nil;
 	list<Stage> stages <- agents of_species Stage;
-	list<FestivalGuest> guests <- agents of_species FestivalGuest;
 	
 	float size <- 1.0;
 	rgb color <- #blue;
@@ -118,7 +216,7 @@ species FestivalGuest skills:[moving, fipa]
 	float soundRatio <- 0.0;
 	float stagePresenceRatio <- 0.0;
 	float vfxRatio <- 0.0;
-	float densityRatio <- 0.0;
+	bool prefersCrowds <- false;
 	
 	init {
 		bandRatio <- rnd(0, initRatioMaxValue) with_precision ratioPrecision;
@@ -127,15 +225,10 @@ species FestivalGuest skills:[moving, fipa]
 		soundRatio <- rnd(0, initRatioMaxValue) with_precision ratioPrecision;
 		stagePresenceRatio <- rnd(0, initRatioMaxValue) with_precision ratioPrecision;
 		vfxRatio <- rnd(0, initRatioMaxValue) with_precision ratioPrecision;
-		list<float> ratioValues <- [bandRatio, dancersRatio, lightShowRatio, soundRatio, stagePresenceRatio, vfxRatio, densityRatio];
+		list<float> ratioValues <- [bandRatio, dancersRatio, lightShowRatio, soundRatio, stagePresenceRatio, vfxRatio];
 		if (debug = true) {
-			write self.name + ": ratio values order = band, dancers, lightshow, sound, stage, vfx, density";
-			write self.name + ": ratio values = " + ratioValues;
-		}
-		if name = "FestivalGuest0"
-		{
-			write self.name + ": is leader";
-			isLeader <- true;
+			write self.name + ": ratio values order = band, dancers, lightshow, sound, stage, vfx, prefersCrowds";
+			write self.name + ": ratio values = " + ratioValues + ", " + prefersCrowds;
 		}
 	}
 	
@@ -146,21 +239,29 @@ species FestivalGuest skills:[moving, fipa]
 		float soundValue <- soundRatio * s.soundRatio with_precision ratioPrecision;
 		float stageValue <- stagePresenceRatio * s.stagePresenceRatio with_precision ratioPrecision;
 		float vfxValue <- vfxRatio * s.vfxRatio with_precision ratioPrecision;
-		float densityValue <- densityRatio * density with_precision ratioPrecision;
-		list<float> ratioValues <- [bandValue, dancersValue, lightsValue, soundValue, stageValue, vfxValue];
+		
+		float densityValue <- 0.0;
+		if prefersCrowds and density >= 8
+		{
+			densityValue <- crowdRatioOffset;
+		} 
+		else if !prefersCrowds and density <= 3
+		{
+			densityValue <- crowdRatioOffset;	
+		}
+		
+		list<float> ratioValues <- [bandValue, dancersValue, lightsValue, soundValue, stageValue, vfxValue, densityValue];
 		float allValuesSum <- sum(ratioValues);
 		if debug = true {
-			// write self.name + ": ratio values order = band, dancers, lightshow, sound, stage, vfx";
+			// write self.name + ": ratio values order = band, dancers, lightshow, sound, stage, vfx, densityValue";
 			// write self.name + ": stage " + s.name + " ratio values = " + ratioValues + ", sum: " + allValuesSum;
 		}
 		return allValuesSum;
 	}
 	
-	action calculateBestStages(list<int> densities)
+	list<float> calculateBestStages(list<int> densities)
 	{
-		list stageUtils <- [];
-		// Stage maxStage <- nil;
-		// float currentMax <- 0.0;
+		list<float> stageUtils <- [];
 		loop i from: 0 to: length(stages) - 1 {
 			Stage s <- stages at i;
 			float stageUtil <- 0.0;
@@ -170,17 +271,7 @@ species FestivalGuest skills:[moving, fipa]
 				stageUtil <- calculateStageUtility(s, 0);
 			}
 			stageUtils <- stageUtils + stageUtil;
-			/* 
-			if maxStage = nil or currentMax < stageUtil
-			{
-				maxStage <- s;
-				currentMax <- stageUtil;
-			}*/
 		}
-		/* 
-		if debug = true {
-			write self.name + ": new best stage: " + maxStage.name + ", util: " + currentMax;
-		}*/
 		return stageUtils;
 	}
 	
@@ -196,6 +287,12 @@ species FestivalGuest skills:[moving, fipa]
 		list<int> stageDensities <- msg.contents[1];
 		list<float> stageUtils <- calculateBestStages(stageDensities);
 		do propose message: msg contents: [stageUtils];
+	}
+	
+	action handleGoToStage(Stage s)
+	{
+		currentStage <- s;
+		color <- s.color;
 	}
 	
 	reflex beIdle when: targetPoint = nil
@@ -320,31 +417,37 @@ species FestivalGuest skills:[moving, fipa]
 		}
 	}
 	
-	reflex receiveInforms when: (!empty(informs))
+	reflex receiveInforms when: !empty(informs)
 	{
 		message receivedInform <- informs[0];
 		list content <- receivedInform.contents;
 		string messageType <- content[0];
 		switch messageType
 		{
-			match ROTATE_STAGE
+			match GO_TO_STAGE
 			{
-				// when some stage rotates, the leader will
-				// initialize a new election to determine
-				// which guests go to which stage
-				if isLeader = true
+				int stageIndex <- content[1] as int;
+				list<int> densities <- content[2] as list<int>;
+				Stage s <- stages[stageIndex];
+				
+				list<float> utils <- calculateBestStages(densities);
+				float max <- max(utils);
+				int maxidx <- 0;
+				loop i from: 0 to: length(utils) - 1
 				{
-					do start_conversation (to :: guests, protocol :: 'fipa-contract-net', performative :: 'cfp', contents :: [START_COORDINATION]);
+					if utils[i] = max
+					{
+						maxidx <- i;
+					}
 				}
+				write self.name + ": going to stage " + s.name + ", highest: " + maxidx + " utils: " + utils;
+				do handleGoToStage(s);
+			}
+			default
+			{
+				write self.name + ": unexpected inform received " + receivedInform;
 			}
 		}
-	}
-	
-	reflex receiveProposals when: !empty(proposes)
-	{
-		// TODO read proposals and do a new iteratio of negotiation
-		list<int> densities <- [];
-		do start_conversation (to :: guests, protocol :: 'fipa-contract-net', performative :: 'cfp', contents :: [COORDINATION_CFP, densities]);
 	}
 	
 	reflex receiveCfp when: !empty(cfps)
@@ -492,11 +595,11 @@ species Stage skills: [fipa] {
 				color <- vfxColor;
 			}
 		}
-		list<FestivalGuest> allGuests <- agents of_species FestivalGuest;
+		list<Leader> leader <- agents of_species Leader;
 		// we might not yet have any guests at the festival
-		if length(allGuests) > 0
+		if length(leader) > 0
 		{
-			do start_conversation (to :: allGuests, protocol :: 'fipa-request', performative :: 'inform', contents :: [ROTATE_STAGE, self]);	
+			do start_conversation (to :: leader, protocol :: 'fipa-request', performative :: 'inform', contents :: [ROTATE_STAGE, self]);	
 		}
 	}
 	
