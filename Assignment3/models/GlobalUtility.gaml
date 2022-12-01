@@ -152,7 +152,7 @@ species Leader skills: [fipa]
 				}
 			}
 			// keep track of the highest utility from each guest
-			globalUtility <- maxUtil;
+			globalUtility <- globalUtility + maxUtil;
 			densities[maxIndex] <- densities[maxIndex] + 1;
 		}
 		
