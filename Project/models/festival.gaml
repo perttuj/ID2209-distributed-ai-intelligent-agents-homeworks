@@ -191,8 +191,9 @@ species festival_guest skills: [moving] control:simple_bdi {
 				if (nextVal > interactionResetLimit)
 				{
 					interactionMap[currentAgent.name] <- -1;
+				} else {
+					interactionMap[currentAgent.name] <- currentVal + 1;	
 				}
-				interactionMap[currentAgent.name] <- currentVal + 1;
 			} else {
 				write self.name + ": current agent doesn't exist in interaction map: " + currentAgent.name;
 			}
@@ -297,6 +298,8 @@ species festival_guest skills: [moving] control:simple_bdi {
 
 species introvert parent: festival_guest {
 	int avoidThreshold <- 2;
+	
+	// TODO add probabilities for species
 
 	reflex avoid when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > avoidThreshold
 	{
@@ -308,6 +311,7 @@ species introvert parent: festival_guest {
 			if interactionMap[currentAgent.name] >= 0
 			{
 				// avoid repeated interactions with same agents
+				interactionMap[currentAgent.name] <- 1;
 			} else {
 				newExtroverts <- newExtroverts + currentAgent;
 				interactionMap[currentAgent.name] <- 0;
