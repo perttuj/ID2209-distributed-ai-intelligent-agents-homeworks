@@ -19,6 +19,7 @@ global {
 	float liking_threshold <- 0.6; // this defines the threshhold for when we determine someone to be a friend of ours or not
 	
 	lounge the_lounge;
+	jail the_jail;
 	geometry shape <- square(20 #km);
 	float step <- 10#mn;	
 	
@@ -31,6 +32,9 @@ global {
     predicate tired <- new_predicate("tired");
     predicate chill <- new_predicate("chill") ;
     predicate share_information <- new_predicate("share information") ;
+    predicate arrested <- new_predicate("arrested");
+    predicate free <- new_predicate("free");
+    
     
 	matrix<float> likingMatrix <- matrix(
 		// introvert, extrovert, security, addict, fighter
@@ -44,7 +48,7 @@ global {
 	init {
 		create lounge {
 			the_lounge <- self;
-			location <- {10#km, 15#km};
+			location <- {10#km, 10#km};
 		}
 		// create stage number: nb_stage;
 		create stage
@@ -62,6 +66,11 @@ global {
 		create stage
 		{
 			location <- {18#km, 5#km};
+		}
+		create jail
+		{
+			the_jail <- self;
+			location <- {10#km, 15#km};
 		}
 		// create festival_guest number: nb_listener;
 		create introvert number: nb_guests / 5;
@@ -136,6 +145,12 @@ species lounge {
 	}
 }
 
+species jail {
+	aspect default{
+		draw square(1000) color: #grey;
+	}
+}
+
 species festival_guest skills: [moving] control:simple_bdi {
     float view_dist <- 1000.0;
     float speed <- 2#km/#h;
@@ -143,6 +158,7 @@ species festival_guest skills: [moving] control:simple_bdi {
     point target;
     float fun <- 0.0;
     int tiredness;
+    int sentence;
     
     // this is used to determine when some other agents are "close enough"
     // such that they can be interacted with
@@ -156,6 +172,7 @@ species festival_guest skills: [moving] control:simple_bdi {
         
     rule belief: stage_location new_desire: tired strength: 2.0;
     rule belief: tired new_desire: chill strength: 3.0;
+    rule belief: arrested new_desire: free strength: 100.0;
     
     init {
     	loop g over: genres {
@@ -195,7 +212,7 @@ species festival_guest skills: [moving] control:simple_bdi {
 					interactionMap[currentAgent.name] <- currentVal + 1;	
 				}
 			} else {
-				write self.name + ": current agent doesn't exist in interaction map: " + currentAgent.name;
+				//write self.name + ": current agent doesn't exist in interaction map: " + currentAgent.name;
 			}
 			
 		}
@@ -205,6 +222,12 @@ species festival_guest skills: [moving] control:simple_bdi {
     {
         do add_belief(tired); 
        	target <- nil;
+    }
+    
+    action go_jail 
+    {
+    	do add_belief(arrested);
+    	target <- nil;
     }
     
     perceive target: stage where (each.quality > 0) in: view_dist {
@@ -288,6 +311,19 @@ species festival_guest skills: [moving] control:simple_bdi {
 	        	do remove_intention(chill, true);
 	        }
 	    }
+    }
+    
+    plan go_to_jail intention: free {
+    	do goto target: the_jail;
+    	if (the_jail.location = location) {
+    		sentence <- sentence - 1;
+    		
+    		if (sentence = 0){
+	        	do remove_belief(arrested);
+	        	do remove_intention(free, true);
+    		}
+    	}
+    	
     }
 
     aspect default {
@@ -388,14 +424,22 @@ species fighter parent: festival_guest {
 	reflex annoy when: length(securityAgents at_distance(nearbyDistanceThreshold)) > 0
 	{
 		write self.name + ": annoying nearby security guards";
-		// TODO annoy guards (just to be an asshole)
-	}
+		fun <- fun + 1;
+		list<security> guards <- securityAgents at_distance(nearbyDistanceThreshold);
+		ask guards {
+			fun <- fun - 1;
+		}
+		
+	}	
 	
 	reflex fight when: length(addictAgents at_distance(nearbyDistanceThreshold)) > 0
 	{
 		write self.name + ": starting a fight with nearby addicts";
-		// TODO fight with substance abusers?
-	}
+		fun <- fun + 1;
+		list<addict> addicts <- addictAgents at_distance(nearbyDistanceThreshold);
+		ask addicts {
+			fun <- fun - 1;
+		}	}
 }
 
 species security parent: festival_guest {
@@ -411,16 +455,33 @@ species security parent: festival_guest {
 		// TODO invite nearby introverts to dance with us!
 	}
 	
-	reflex arrestAddict when: length(addictAgents at_distance(nearbyDistanceThreshold)) > 0
+	reflex sendToJail when: length(addictAgents 	at_distance(nearbyDistanceThreshold)) > 0 or
+							length(fighterAgents 	at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": arresting nearby addict";
-		// TODO report substance abusers to guards? send them to the chill area for a while?
-	}
-	
-	reflex kickOut when: length(fighterAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": kicking out fighters";
-		// TODO: only do this when fighters start fighting someone?
+		write self.name + ": arresting nearby addict or fighter";
+		list<festival_guest> arrests <- addictAgents at_distance(nearbyDistanceThreshold) + fighterAgents at_distance(nearbyDistanceThreshold);
+		list<festival_guest> newArrest <- [];
+		loop i from: 0 to: length(arrests) - 1
+		{
+			festival_guest currentAgent <- arrests at i;
+			if interactionMap[currentAgent.name] >= 0
+			{
+				// avoid repeated interactions with same agents
+				interactionMap[currentAgent.name] <- 1;
+			} else {
+				newArrest <- newArrest + currentAgent;
+				interactionMap[currentAgent.name] <- 0;
+			}		
+		}
+		if length(newArrest) > 0
+		{
+			write self.name + ": fighters or addicts nearby, arresting";
+			ask newArrest{
+				do go_jail;
+				self.sentence <- rnd(10);
+				fun <- fun/4*3;
+			}
+		}
 	}
 }
 
@@ -438,14 +499,32 @@ species addict parent: festival_guest {
 		// TODO sell drugs to nearby extroverts (and dancers?)
 	}
 	
-	reflex avoid when: 	length(securityAgents 	at_distance(nearbyDistanceThreshold)) > 0 or
+	reflex avoid when: length(securityAgents 	at_distance(nearbyDistanceThreshold)) > 0 or
 						length(fighterAgents 	at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": avoiding guards/fighters nearby";
-		do go_chill;
-		// TODO avoid current location if there are fighters nearby, since they might beat us up
-		// and security might arrest us
+		list<festival_guest> avoids <- securityAgents at_distance(nearbyDistanceThreshold) + fighterAgents at_distance(nearbyDistanceThreshold);
+		list<festival_guest> newAvoid <- [];
+		loop i from: 0 to: length(avoids) - 1
+		{
+			festival_guest currentAgent <- avoids at i;
+			if interactionMap[currentAgent.name] >= 0
+			{
+				// avoid repeated interactions with same agents
+				interactionMap[currentAgent.name] <- 1;
+			} else {
+				newAvoid <- newAvoid + currentAgent;
+				interactionMap[currentAgent.name] <- 0;
+			}
+		}
+		// TODO: reduce fun since extroverts made us reconsider our choice
+		// TODO: don't run this when already in chill area?
+		if length(newAvoid) > 0 
+		{
+			write self.name + ": fighters or guards nearby, taking a break";
+			do go_chill;
+		}
 	}
+	
 }
 
 species socialLinkRepresentation{
@@ -462,8 +541,9 @@ species socialLinkRepresentation{
 experiment festivalBdi type: gui {
     output {
 	    display festivalMap type: opengl {
-	        species lounge ;
-	        species stage ;
+	        species lounge;
+	        species stage;
+	        species jail;
 	        species festival_guest;
 	        species introvert;
 	        species extrovert;
