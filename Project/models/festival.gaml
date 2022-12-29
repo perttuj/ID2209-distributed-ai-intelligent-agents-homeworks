@@ -14,8 +14,7 @@ global {
 	int nb_guests <- 50;
 	
 	list<string> genres <- ["rock", "indie", "rap", "soul", "techno"];
-	
-	float inequality <- 0.0 update: standard_deviation((agents of_generic_species festival_guest) collect each.fun);
+
 	float liking_threshold <- 0.6; // this defines the threshhold for when we determine someone to be a friend of ours or not
 	
 	lounge the_lounge;
@@ -23,18 +22,20 @@ global {
 	geometry shape <- square(20 #km);
 	float step <- 10#mn;	
 	
+	bool debug <- false;
+	
 	string stage_at_location <- "stage_at_location";
     string empty_stage_location <- "empty_stage_location";
     
     predicate stage_location <- new_predicate(stage_at_location) ;
     predicate choose_stage <- new_predicate("choose a stage");
-    predicate find_stage <- new_predicate("find stage") ;
+    predicate find_stage <- new_predicate("find stage");
+    predicate dance_at_stage <- new_predicate("dance near stage");
     predicate tired <- new_predicate("tired");
-    predicate chill <- new_predicate("chill") ;
-    predicate share_information <- new_predicate("share information") ;
+    predicate chill <- new_predicate("chill");
+    predicate share_information <- new_predicate("share information");
     predicate arrested <- new_predicate("arrested");
     predicate free <- new_predicate("free");
-    
     
 	matrix<float> likingMatrix <- matrix(
 		// introvert, extrovert, security, addict, fighter
@@ -53,19 +54,19 @@ global {
 		// create stage number: nb_stage;
 		create stage
 		{
-			location <- {3#km, 5#km};
+			location <- {5#km, 5#km};
 		}
 		create stage
 		{
-			location <- {8#km, 5#km};
+			location <- {5#km, 15#km};
 		}
 		create stage
 		{
-			location <- {13#km, 5#km};
+			location <- {15#km, 5#km};
 		}
 		create stage
 		{
-			location <- {18#km, 5#km};
+			location <- {15#km, 15#km};
 		}
 		create jail
 		{
@@ -79,6 +80,7 @@ global {
 		create addict number: nb_guests / 5;
 		create fighter number: nb_guests / 5;
 	}
+
 	
 	float getLikingForAgent(int currSpecies, int tarSpecies) 
 	{
@@ -99,7 +101,7 @@ global {
 		}
 	}
 	
-	reflex display_social_links{
+	action display_social_links {
         loop tempListener over: agents of_generic_species festival_guest {
                 loop tempDestination over: tempListener.social_link_base {
                     if (tempDestination !=nil){
@@ -122,11 +124,17 @@ global {
                 }
             }
     }
-	reflex end_simulation when: sum(stage collect each.quality) = 0 and empty(agents of_generic_species festival_guest where each.has_belief(tired)){
-	    do pause;
-	        ask festival_guest {
-	        write name + " : " + fun;
-	    }
+    
+    reflex update_links when: (cycle mod 1000) = 0
+    {
+    	do display_social_links;
+    }
+    
+	reflex print_inequality when: (cycle mod 100) = 0 {
+		list<float> vals <- (agents of_generic_species festival_guest) collect each.fun;
+    	float std <- standard_deviation(vals);
+    	float mean <- mean(vals);
+	    write self.name + ": standard deviation = " + std + ", mean: " + mean;
     }
 	
 }
@@ -135,7 +143,7 @@ species stage {
 	int quality <- rnd(1,10);
 	string genre <- (1 among genres) at 0;
 	aspect default {
-		draw triangle(200 + quality * 50) color: (quality > 0) ? #yellow : #gray border: #black;	
+		draw triangle(500) color: (quality > 0) ? #yellow : #gray border: #black;	
 	}
 }
 
@@ -151,14 +159,16 @@ species jail {
 	}
 }
 
-species festival_guest skills: [moving] control:simple_bdi {
+species festival_guest skills: [moving, fipa] control: simple_bdi {
     float view_dist <- 1000.0;
     float speed <- 2#km/#h;
-    rgb my_color <- rnd_color(255);
+    rgb my_color;
     point target;
     float fun <- 0.0;
     int tiredness;
     int sentence;
+    int agentIndex;
+    bool initialized <- false;
     
     // this is used to determine when some other agents are "close enough"
     // such that they can be interacted with
@@ -168,16 +178,29 @@ species festival_guest skills: [moving] control:simple_bdi {
     // so we can avoid constantly high fiving someone near us, for example
 	map<string, int> interactionMap <- [];
 	// how many rounds to wait before we can interact with the same agent again
-	int interactionResetLimit <- 10;
+	int interactionResetLimit <- 100;
         
     rule belief: stage_location new_desire: tired strength: 2.0;
     rule belief: tired new_desire: chill strength: 3.0;
     rule belief: arrested new_desire: free strength: 100.0;
     
+    // these personality traits are set in each sub-species,
+    // and might impact choices the guests make when interacting
+    // with eachother
+    float sociability;
+    float energyDensity;
+    float spontaneity;
+    
+    // these are FIPA messages shared across different sub-species -
+    // to avoid repetition, we place them here in the parent species
+    // rather than hardcoding them in each sub-species
+    string OFFER_DRINK <- "offer_drink"; // interaction between extrovert -> introvert
+    
     init {
     	loop g over: genres {
     		tastes <- tastes + [g:: rnd(1.0)];
     	}
+    	
     	do add_desire(find_stage);
     }
     
@@ -187,13 +210,18 @@ species festival_guest skills: [moving] control:simple_bdi {
 	list<fighter> fighterAgents <- agents of_species fighter;
 	list<addict> addictAgents <- agents of_species addict;
     
-    reflex initAgents
+    reflex initAgents when: initialized = false
     {
+    	list<festival_guest> guests <- agents of_generic_species festival_guest;
+    	if (length(guests) != nb_guests) {
+    		return;
+    	}
 		introvertAgents <- agents of_species introvert;
 		extrovertAgents <- agents of_species extrovert;
 		securityAgents <- agents of_species security;
 		fighterAgents <- agents of_species fighter;
 		addictAgents <- agents of_species addict;
+		initialized <- true;
     }
     
     reflex incrementInteractionMap
@@ -202,22 +230,75 @@ species festival_guest skills: [moving] control:simple_bdi {
 		{
 			agent currentAgent <- agents at i;
 			int currentVal <- interactionMap[currentAgent.name];
-			if (currentVal >= 0) {
+			if (currentVal >= 1) {
 				int nextVal <- currentVal + 1;
-				write self.name + ": incrementing interaction map for: " + currentAgent.name + " to: " + nextVal;
+				if debug = true 
+				{
+					write self.name + ": incrementing interaction map for: " + currentAgent.name + " to: " + nextVal;
+				}
 				if (nextVal > interactionResetLimit)
 				{
 					interactionMap[currentAgent.name] <- -1;
 				} else {
-					interactionMap[currentAgent.name] <- currentVal + 1;	
+					interactionMap[currentAgent.name] <- nextVal;	
 				}
-			} else {
-				//write self.name + ": current agent doesn't exist in interaction map: " + currentAgent.name;
 			}
 			
 		}
     }
     
+    int getAgentIndex(string agentType)
+	{
+		if agentType = "introvert"
+		{
+			return 0;
+		}
+		if agentType = "extrovert"
+		{
+			return 1;
+		}
+		if agentType = "security"
+		{
+			return 2;
+		}
+		if agentType = "addict"
+		{
+			return 3;
+		}
+		if agentType = "fighter"
+		{
+			return 4;
+		}
+		int error <- 100/0;
+	}
+	
+	action setAgentColor(string agentType)
+	{
+		if agentType = "introvert"
+		{
+			my_color <- #green;
+		}
+		else if agentType = "extrovert"
+		{
+			my_color <- #yellow;
+		}
+		else if agentType = "security"
+		{
+			my_color <- #orange;
+		}
+		else if agentType = "addict"
+		{
+			my_color <- #blue;
+		}
+		else if agentType = "fighter"
+		{
+			my_color <- #red;
+		} 
+		else {
+			int error <- 100/0;	
+		}
+	}
+	
     action go_chill
     {
         do add_belief(tired); 
@@ -228,10 +309,39 @@ species festival_guest skills: [moving] control:simple_bdi {
     {
     	do add_belief(arrested);
     	target <- nil;
+	}
+
+    /**
+     * This will return a list of nearby agents that the current agent has not interacted with
+     * in recent time.
+     */
+    list<festival_guest> getNearbyAgentsOfType(list<festival_guest> agentsOfType)
+    {
+		list<festival_guest> nearbyGuests <- agentsOfType at_distance(nearbyDistanceThreshold);
+		list<festival_guest> newNearbyGuests <- [];
+    	if length(nearbyGuests) = 0
+    	{
+    		return [];
+    	}
+		loop i from: 0 to: length(nearbyGuests) - 1
+		{
+			festival_guest currentAgent <- nearbyGuests at i;
+			if currentAgent.name = self.name 
+			{
+				// don't interact with self	
+			} else if interactionMap[currentAgent.name] >= 1 {
+				// avoid repeated interactions with same agents.
+				// the map is incremented in a separate reflex
+			} else {
+				newNearbyGuests <- newNearbyGuests + currentAgent;
+				interactionMap[currentAgent.name] <- 1;
+			}
+		}
+		return newNearbyGuests;
     }
     
     perceive target: stage where (each.quality > 0) in: view_dist {
-    	focus id: stage_at_location var:location;
+    	focus id: stage_at_location var: location;
     	ask myself {
 	        do add_desire(predicate:share_information, strength: 5.0);
 	        do remove_intention(find_stage, false);
@@ -239,13 +349,13 @@ species festival_guest skills: [moving] control:simple_bdi {
     }
     
     // This will determine the likeability of guests within view_dist,
-    // NOTE: this is executed in the context of the listener, not the
+    // NOTE: this is executed in the context of the other guest, not the
     // agent itself - therefore, we use "myself.tastes" to compare difference
     // in preferences.
     // TODO: This should be dependent on the association matrix written in the report,
     // i.e. each sub-species should set this likeability themselves.
     // TOOD: Perhaps this should only be done on initialization? Or only when guests
-    // encounter eachother?
+    // encounter eachother? 
     perceive target: agents of_generic_species festival_guest in: view_dist {
     	point targetPoint <- point(tastes.values at 0, tastes.values at 1, tastes.values at 2, tastes.values at 3, tastes.values at 4);
     	point selfPoint <- point(myself.tastes.values at 0, myself.tastes.values at 1, myself.tastes.values at 2, myself.tastes.values at 3, myself.tastes.values at 4);
@@ -265,10 +375,9 @@ species festival_guest skills: [moving] control:simple_bdi {
 	    }
     	do remove_intention(share_information, true); 
     }
-    
-    // TODO: Perhaps the guests should always know where
-    // stages are located instead of wandering?
+
     plan lets_wander intention: find_stage {
+    	fun <- fun + 1;
     	do wander;
     }
     
@@ -335,192 +444,307 @@ species festival_guest skills: [moving] control:simple_bdi {
 species introvert parent: festival_guest {
 	int avoidThreshold <- 2;
 	
-	// TODO add probabilities for species
-
-	reflex avoid when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > avoidThreshold
+	string SMALL_TALK <- "small_talk";
+	
+	init {
+		sociability <- 0.1;
+		energyDensity <- -0.5;
+		spontaneity <- 0.2;
+		agentIndex <- getAgentIndex("introvert");
+		do setAgentColor("introvert");
+	}
+	
+	action doSmallTalk
 	{
-		list<extrovert> extroverts <- extrovertAgents at_distance(nearbyDistanceThreshold);
-		list<extrovert> newExtroverts <- [];
-		loop i from: 0 to: length(extroverts) - 1
+		// introverts enjoy the company of each other,
+		// so interacting with other introverts greatly
+		// increases the level of fun they're having
+		fun <- fun + 10;
+	}
+	
+	action receiveDrink
+	{
+		// we don't always want to accept a drink from a stranger,
+		// so use our spontaneity and sociability value to determine
+		// if we should do so
+		bool feelingSpontaneous <- rnd(1) <= spontaneity;
+		if feelingSpontaneous
 		{
-			extrovert currentAgent <- extroverts at i;
-			if interactionMap[currentAgent.name] >= 0
+			if debug = true
 			{
-				// avoid repeated interactions with same agents
-				interactionMap[currentAgent.name] <- 1;
-			} else {
-				newExtroverts <- newExtroverts + currentAgent;
-				interactionMap[currentAgent.name] <- 0;
+				write self.name + ": accepting drink offer";
+			}
+			// even though introverts might feel spontaneous,
+			// the increased fun isn't that significant
+			// since they don't have a very high sociability value
+			float increasedFun <- 10 * sociability;
+			fun <- fun + increasedFun;
+		} else {
+			if debug = true
+			{
+				write self.name + ": rejecting drink offer";
 			}
 		}
-		// TODO: reduce fun since extroverts made us reconsider our choice
-		// TODO: don't run this when already in chill area?
-		if length(newExtroverts) > 0
+	}
+	
+	reflex receiveInforms when: !empty(informs)
+	{
+		message receivedInform <- informs[0];
+		list content <- receivedInform.contents;
+		string messageType <- content[0];
+		switch messageType
 		{
-			write self.name + ": extroverts nearby are annoying, taking a break";
-			do go_chill;
+			match SMALL_TALK
+			{
+				do doSmallTalk;
+			}
+			match OFFER_DRINK
+			{
+				do receiveDrink;
+			}
+			default
+			{
+				if debug = true
+				{
+					write self.name + ": unexpected inform received " + receivedInform;
+				}
+			}
 		}
 	}
-	
-	reflex appreciate when: length(securityAgents at_distance(nearbyDistanceThreshold)) > 0
+
+	reflex smallTalk when: length(introvertAgents at_distance(nearbyDistanceThreshold)) > 1
 	{
-		write self.name + ": appreciating nearby security guards";
-		// TODO appreciate security guards with FIPA?
+		list<introvert> introverts <- getNearbyAgentsOfType(introvertAgents) as list<introvert>;
+		if length(introverts) > 0 {
+			if debug = true
+			{
+				write self.name + ": small talking with nearby introverts: " + length(introverts);
+			}
+			do start_conversation (to :: introverts, protocol :: 'fipa-request', performative :: 'inform', contents :: [SMALL_TALK]);
+		}
 	}
-	
-	reflex report when: length(addictAgents at_distance(nearbyDistanceThreshold)) > 0
+
+	// TODO this should only be run while at a stage (intention = tried?)
+	reflex avoid when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > avoidThreshold
 	{
-		write self.name + ": reporting nearby addicts";
-		// TODO report substance abusers to security with FIPA?
-	}
-	
-	reflex askToBeatUp when: length(addictAgents at_distance(nearbyDistanceThreshold)) > 0 and length(fighterAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": asking nearby fighters to beat up addicts";
-		// TODO ask fighters to beat up guests with FIPA?
+		list<extrovert> extroverts <- getNearbyAgentsOfType(extrovertAgents) as list<extrovert>;
+		// TODO: don't run this when already in chill area?
+		int nearbyExtroverts <- length(extroverts);
+		if nearbyExtroverts > 0
+		{
+			if debug = true
+			{
+				write self.name + ": extroverts nearby are annoying, taking a break";
+			}
+			// reduce the fun we're having depending on the value
+			// of our energy density personality trait
+			bool feelingSpontaneous <- rnd(1) <= spontaneity;
+			bool feelingSocial <- rnd(1) <= sociability;
+			if !feelingSpontaneous and !feelingSocial
+			{
+				float reducedFun <- energyDensity * nearbyExtroverts;
+				fun <- fun - reducedFun;
+				do go_chill;
+			}
+		}
 	}
 }
 
 species extrovert parent: festival_guest {
+	
+	string OFFER_SHOTS <- "offer_shots";
+	
+	init {
+		sociability <- 0.8;
+		energyDensity <- 1.0;
+		spontaneity <- 0.8;
+		agentIndex <- getAgentIndex("extrovert");
+		do setAgentColor("extrovert");
+	}
+	
+	action receiveShots
+	{
+		// extroverts love being social, so receiveing shots
+		// from likeminded individual greatly increases the fun
+		// that they're having
+		float sociabilityFun <- 5 * sociability;
+		float spontaneityFun <- 5 * spontaneity;
+		fun <- fun + sociabilityFun + spontaneityFun;
+	}
+	
+	reflex receiveInforms when: !empty(informs)
+	{
+		message receivedInform <- informs[0];
+		list content <- receivedInform.contents;
+		string messageType <- content[0];
+		switch messageType
+		{
+			match OFFER_SHOTS
+			{
+				do receiveShots;
+			}
+			default
+			{
+				if debug = true
+				{
+					write self.name + ": unexpected inform received " + receivedInform;
+				}
+			}
+		}
+	}
+
 	reflex offerDrink when: length(introvertAgents at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": offering drink to nearby introverts";
-		// TODO offer drink to introverts
+		list<introvert> introverts <- getNearbyAgentsOfType(introvertAgents) as list<introvert>;
+
+		if length(introverts) = 0
+		{
+			return;
+		}
+		
+		if (rnd(1) > spontaneity) 
+		{
+			// don't always offer drinks, only do so spontaneously
+			return;
+		}
+
+		if debug = true
+		{
+			write self.name + ": offering drink to nearby introverts: " + length(introverts);
+		}
+
+		do start_conversation (to :: introverts, protocol :: 'fipa-request', performative :: 'inform', contents :: [OFFER_DRINK]);
 	}
 	
-	reflex highFive when: length(securityAgents at_distance(nearbyDistanceThreshold)) > 0
+	reflex offerShots when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": high fiving nearby security guards";
-		// TODO high five security guards
-	}
-	
-	reflex hypeUp when: length(addictAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": hyping up nearby addicts";
-		// TODO hype up substance abusers
-	}
-	
-	reflex avoid when: length(fighterAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		// TODO avoid fighters
-		write self.name + ": avoiding nearby fighters";
-		do go_chill;
+		list<extrovert> extroverts <- getNearbyAgentsOfType(extrovertAgents) as list<extrovert>;
+
+		if length(extroverts) = 0
+		{
+			return;
+		}
+		
+		if (rnd(1) > spontaneity) 
+		{
+			// don't always offer shots, only do so spontaneously
+			return;	
+		}
+
+		if debug = true
+		{
+			write self.name + ": offering shots to nearby extroverts: " + length(extroverts);
+		}
+		
+		// since extroverts enjoy company, their fun is increased when they have likeminded individuals nearby
+		fun <- fun + length(extroverts) * energyDensity;
+		do start_conversation (to :: extroverts, protocol :: 'fipa-request', performative :: 'inform', contents :: [OFFER_SHOTS]);
 	}
 }
 
 species fighter parent: festival_guest {
-	reflex danceWith when: length(introvertAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": dancing with a nearby introvert";
-		// TODO dance with introverts
-	}
 	
-	reflex threaten when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": threatening a nearby extrovert";
-		// TODO threaten annoying guests (extroverts/dancers?)
+	init {
+		sociability <- 0.2;
+		energyDensity <- 0.3;
+		spontaneity <- 0.1;
+		agentIndex <- getAgentIndex("fighter");
+		do setAgentColor("fighter");
 	}
 	
 	reflex annoy when: length(securityAgents at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": annoying nearby security guards";
-		fun <- fun + 1;
-		list<security> guards <- securityAgents at_distance(nearbyDistanceThreshold);
-		ask guards {
-			fun <- fun - 1;
-		}
+		list<security> guards <- getNearbyAgentsOfType(securityAgents) as list<security>;
 		
+		if length(guards) = 0
+		{
+			return;
+		}
+		if debug = true
+		{
+			write self.name + ": annoying nearby security guards";
+		}
+		fun <- fun + 5;
+		ask guards {
+			fun <- fun - 5;
+		}
 	}	
 	
 	reflex fight when: length(addictAgents at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": starting a fight with nearby addicts";
-		fun <- fun + 1;
-		list<addict> addicts <- addictAgents at_distance(nearbyDistanceThreshold);
+		list<addict> addicts <- getNearbyAgentsOfType(addictAgents) as list<addict>;
+		
+		if length(addicts) = 0
+		{
+			return;
+		}
+		if debug = true
+		{
+			write self.name + ": starting a fight with nearby addicts";			
+		}
+		fun <- fun + 5;
 		ask addicts {
-			fun <- fun - 1;
-		}	}
+			fun <- fun - 5;
+		}	
+	}
 }
 
 species security parent: festival_guest {
-	reflex cheerOn when: length(introvertAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": cheering on nearby introverts";
-		// TODO avoid current location if there are many unwanted guests (fighters and addicts?)
-	}
 	
-	reflex highFive when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": high fiving nearby extroverts";
-		// TODO invite nearby introverts to dance with us!
+	init {
+		sociability <- 0.2;
+		energyDensity <- 0.8;
+		spontaneity <- 0.1;
+		agentIndex <- getAgentIndex("security");
+		do setAgentColor("security");
 	}
 	
 	reflex sendToJail when: length(addictAgents 	at_distance(nearbyDistanceThreshold)) > 0 or
 							length(fighterAgents 	at_distance(nearbyDistanceThreshold)) > 0
 	{
-		write self.name + ": arresting nearby addict or fighter";
-		list<festival_guest> arrests <- addictAgents at_distance(nearbyDistanceThreshold) + fighterAgents at_distance(nearbyDistanceThreshold);
-		list<festival_guest> newArrest <- [];
-		loop i from: 0 to: length(arrests) - 1
+		list<addict> addicts <- getNearbyAgentsOfType(addictAgents) as list<addict>;
+		list<fighter> fighters <- getNearbyAgentsOfType(fighterAgents) as list<fighter>;
+		list<festival_guest> arrests <- addicts + fighters;
+		if length(arrests) = 0
 		{
-			festival_guest currentAgent <- arrests at i;
-			if interactionMap[currentAgent.name] >= 0
-			{
-				// avoid repeated interactions with same agents
-				interactionMap[currentAgent.name] <- 1;
-			} else {
-				newArrest <- newArrest + currentAgent;
-				interactionMap[currentAgent.name] <- 0;
-			}		
+			return;
 		}
-		if length(newArrest) > 0
+		if debug = true
 		{
 			write self.name + ": fighters or addicts nearby, arresting";
-			ask newArrest{
-				do go_jail;
-				self.sentence <- rnd(10);
-				fun <- fun/4*3;
-			}
+		}
+		ask arrests {
+			do go_jail;
+			fun <- fun/4*3;
+			self.sentence <- rnd(10);
 		}
 	}
 }
 
 species addict parent: festival_guest {
 	
-	reflex offerDrugs when: length(introvertAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": offering drugs to nearby introverts";
-		// TODO offer drugs to nearby introverts
-	}
-	
-	reflex sellDrugs when: length(extrovertAgents at_distance(nearbyDistanceThreshold)) > 0
-	{
-		write self.name + ": selling drugs to nearby extroverts";
-		// TODO sell drugs to nearby extroverts (and dancers?)
+	init {
+		sociability <- -0.5;
+		energyDensity <- 1.0;
+		spontaneity <- 0.2;
+		agentIndex <- getAgentIndex("addict");
+		do setAgentColor("addict");
 	}
 	
 	reflex avoid when: length(securityAgents 	at_distance(nearbyDistanceThreshold)) > 0 or
 						length(fighterAgents 	at_distance(nearbyDistanceThreshold)) > 0
 	{
-		list<festival_guest> avoids <- securityAgents at_distance(nearbyDistanceThreshold) + fighterAgents at_distance(nearbyDistanceThreshold);
-		list<festival_guest> newAvoid <- [];
-		loop i from: 0 to: length(avoids) - 1
+		list<security> nearbySecurity <- getNearbyAgentsOfType(securityAgents) as list<security>;
+		list<fighter> nearbyFighters <- getNearbyAgentsOfType(fighterAgents) as list<fighter>;
+		
+		list<festival_guest> avoids <- nearbySecurity + nearbyFighters;
+		if length(avoids) > 0 
 		{
-			festival_guest currentAgent <- avoids at i;
-			if interactionMap[currentAgent.name] >= 0
+			if debug = true
 			{
-				// avoid repeated interactions with same agents
-				interactionMap[currentAgent.name] <- 1;
-			} else {
-				newAvoid <- newAvoid + currentAgent;
-				interactionMap[currentAgent.name] <- 0;
+				write self.name + ": fighters or guards nearby, avoiding them and taking a break";
 			}
-		}
-		// TODO: reduce fun since extroverts made us reconsider our choice
-		// TODO: don't run this when already in chill area?
-		if length(newAvoid) > 0 
-		{
-			write self.name + ": fighters or guards nearby, taking a break";
+			fun <- fun - 5;
 			do go_chill;
 		}
 	}
