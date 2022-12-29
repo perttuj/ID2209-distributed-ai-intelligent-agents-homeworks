@@ -73,7 +73,8 @@ global {
 			the_jail <- self;
 			location <- {10#km, 15#km};
 		}
-		// create festival_guest number: nb_listener;
+		// create festival_guest number: nb_guests;
+		
 		create introvert number: nb_guests / 5;
 		create extrovert number: nb_guests / 5;
 		create security number: nb_guests / 5;
@@ -143,7 +144,7 @@ species stage {
 	int quality <- rnd(1,10);
 	string genre <- (1 among genres) at 0;
 	aspect default {
-		draw triangle(500) color: (quality > 0) ? #yellow : #gray border: #black;	
+		draw triangle(1500) color: (quality > 0) ? #yellow : #gray border: #black;	
 	}
 }
 
