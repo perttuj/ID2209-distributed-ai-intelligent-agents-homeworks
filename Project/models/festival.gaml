@@ -25,7 +25,6 @@ global {
 	bool debug <- false;
 	
 	string stage_at_location <- "stage_at_location";
-    string empty_stage_location <- "empty_stage_location";
     
     predicate stage_location <- new_predicate(stage_at_location) ;
     predicate choose_stage <- new_predicate("choose a stage");
@@ -103,7 +102,7 @@ global {
 	}
 	
 	action display_social_links {
-        loop tempListener over: agents of_generic_species festival_guest {
+        loop tempListener over: agents of_generic_species introvert {
                 loop tempDestination over: tempListener.social_link_base {
                     if (tempDestination !=nil){
                         bool exists <- false;
@@ -124,9 +123,10 @@ global {
                     }
                 }
             }
+        write "LOL";
     }
     
-    reflex update_links when: (cycle mod 1000) = 0
+    reflex update_links when: (cycle mod 1000) = 1
     {
     	do display_social_links;
     }
@@ -170,7 +170,8 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
     int sentence;
     int agentIndex;
     bool initialized <- false;
-    
+    list<point> possible_stages;
+  
     // this is used to determine when some other agents are "close enough"
     // such that they can be interacted with
 	int nearbyDistanceThreshold <- 5;
@@ -192,6 +193,11 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
     float energyDensity;
     float spontaneity;
     
+    bool listening <- false;
+    float initial_fun <- 0.0;
+    map<point, float> expected_reward;
+    map<point, int> visits;
+    
     // these are FIPA messages shared across different sub-species -
     // to avoid repetition, we place them here in the parent species
     // rather than hardcoding them in each sub-species
@@ -201,7 +207,12 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
     	loop g over: genres {
     		tastes <- tastes + [g:: rnd(1.0)];
     	}
+    	possible_stages <- get_beliefs_with_name(stage_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
     	
+    	loop st over: possible_stages {
+    		expected_reward <- expected_reward + [st:: 1000.0];
+    		visits <- visits + [st:: 0];
+    	}
     	do add_desire(find_stage);
     }
     
@@ -346,6 +357,7 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
     	ask myself {
 	        do add_desire(predicate:share_information, strength: 5.0);
 	        do remove_intention(find_stage, false);
+	        
     	}    	
     }
     
@@ -383,10 +395,16 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
     }
     
 	plan listen_music intention: tired {
+
 	    if (target = nil) {
 	        do add_subintention(get_current_intention(),choose_stage, true);
 	        do current_intention_on_hold();
 	    } else {
+	    	if listening = false {
+				initial_fun <- fun;
+				listening <- true;
+				visits[target] <- visits[target] + 1;
+			}
 	        do goto target: target;
 	        if (location distance_to(target) < 10)  {
 		        stage current_stage <- stage first_with (target distance_to(each.location) < 10);
@@ -394,15 +412,20 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
 		        fun <- fun + current_stage.quality * appreciation;
 		        tiredness <- tiredness + 1;
 		        if (tiredness > 50) {
+		        	if visits[target] > 1{
+		        		expected_reward[target] <- expected_reward[target]/(visits[target]-1) + (fun - initial_fun)/visits[target];
+		        	} else if  visits[target] = 1 {
+		        		expected_reward[target] <- (fun - initial_fun)/visits[target];
+		        	}
 		        	do go_chill;
+		        	listening <- false;
 		        }
 	        }
 	    }   
 	}
-	
-	
+	/*
 	plan choose_closest_stage intention: choose_stage instantaneous: true {
-	    list<point> possible_stages <- get_beliefs_with_name(stage_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
+	    possible_stages <- get_beliefs_with_name(stage_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
 	    if (empty(possible_stages)) {
 	        do remove_intention(tired, true); 
 	    } else {
@@ -410,6 +433,25 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
 	    }
 	    do remove_intention(choose_stage, true); 
     }
+    */
+    plan choose_best_stage intention: choose_stage instantaneous: true {
+    	possible_stages <- get_beliefs_with_name(stage_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
+    	map<point,float> choices <- find_choices(expected_reward);
+    	target <- rnd_choice(choices);
+    	do remove_intention(choose_stage, true);
+    }
+	
+	map<point,float> find_choices(map<point, float> expected){
+		map<point, float> choices;
+		loop st over: possible_stages {
+			if expected[st] > 0 {
+				choices <- choices + [st:: expected[st]];
+			} else {
+				choices <- choices + [st:: 1000.0];
+			}
+		}
+		return choices;
+	}
 	
 	plan return_to_base intention: chill {
 	    do goto target: the_lounge ;
@@ -544,7 +586,9 @@ species introvert parent: festival_guest {
 			if !feelingSpontaneous and !feelingSocial
 			{
 				float reducedFun <- energyDensity * nearbyExtroverts;
-				fun <- fun - reducedFun;
+				if fun > reducedFun {
+					fun <- fun - reducedFun;
+				}
 				do go_chill;
 			}
 		}
@@ -667,7 +711,9 @@ species fighter parent: festival_guest {
 		}
 		fun <- fun + 5;
 		ask guards {
-			fun <- fun - 5;
+			if fun > 5 {
+				fun <- fun - 5;
+			}		
 		}
 	}	
 	
@@ -685,7 +731,9 @@ species fighter parent: festival_guest {
 		}
 		fun <- fun + 5;
 		ask addicts {
-			fun <- fun - 5;
+			if fun > 5 {
+				fun <- fun - 5;
+			}
 		}	
 	}
 }
@@ -716,7 +764,9 @@ species security parent: festival_guest {
 		}
 		ask arrests {
 			do go_jail;
-			fun <- fun/4*3;
+			if fun > 0{
+				fun <- fun/4*3;	
+			}
 			self.sentence <- rnd(10);
 		}
 	}
@@ -745,7 +795,9 @@ species addict parent: festival_guest {
 			{
 				write self.name + ": fighters or guards nearby, avoiding them and taking a break";
 			}
-			fun <- fun - 5;
+			if fun > 5 {
+				fun <- fun - 5;
+			}
 			do go_chill;
 		}
 	}
@@ -788,5 +840,6 @@ experiment festivalBdi type: gui {
 	    display socialLinks type: opengl {
 	        species socialLinkRepresentation aspect: base;
 	    }
+
     }
 }
