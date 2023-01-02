@@ -35,15 +35,6 @@ global {
     predicate share_information <- new_predicate("share information");
     predicate arrested <- new_predicate("arrested");
     predicate free <- new_predicate("free");
-    
-	matrix<float> likingMatrix <- matrix(
-		// introvert, extrovert, security, addict, fighter
-		[1.0, -0.8, 0.2, 0.4, 0.2], // introvert 
-		[0.2, 1.0, 0.6, 0.4, -0.2], // extrovert 
-		[0.4, 0.8, 1.0, 0.2, -0.6], // security
-		[0.8, -0.6, 0.4, 1.0, 0.2], // addict
-		[0.8, 0.4, -0.2, -0.6, 1.0] // fighter
-	);
 	
 	init {
 		create lounge {
@@ -79,12 +70,6 @@ global {
 		create security number: nb_guests / 5;
 		create addict number: nb_guests / 5;
 		create fighter number: nb_guests / 5;
-	}
-
-	
-	float getLikingForAgent(int currSpecies, int tarSpecies) 
-	{
-		return likingMatrix[tarSpecies, currSpecies];
 	}
 	
 	rgb getLikingColor(float likingValue) {
@@ -365,15 +350,25 @@ species festival_guest skills: [moving, fipa] control: simple_bdi {
     // NOTE: this is executed in the context of the other guest, not the
     // agent itself - therefore, we use "myself.tastes" to compare difference
     // in preferences.
-    // TODO: This should be dependent on the association matrix written in the report,
-    // i.e. each sub-species should set this likeability themselves.
-    // TOOD: Perhaps this should only be done on initialization? Or only when guests
-    // encounter eachother? 
     perceive target: agents of_generic_species festival_guest in: view_dist {
     	point targetPoint <- point(tastes.values at 0, tastes.values at 1, tastes.values at 2, tastes.values at 3, tastes.values at 4);
     	point selfPoint <- point(myself.tastes.values at 0, myself.tastes.values at 1, myself.tastes.values at 2, myself.tastes.values at 3, myself.tastes.values at 4);
     	float l <- targetPoint distance_to selfPoint;
-    	socialize liking: l;
+    
+		matrix<float> likingMatrix <- matrix(
+			// introvert, extrovert, security, addict, fighter
+			[1.0, 0.2, 0.4, 0.4, 0.2], // introvert 
+			[0.2, 1.0, 0.6, 0.4, 0.2], // extrovert 
+			[0.6, 0.8, 1.0, 0.2, 0.4], // security
+			[0.8, 0.4, 0.4, 1.0, 0.2], // addict
+			[0.8, 0.4, 0.2, 0.6, 1.0] // fighter
+		);
+		
+		float likingOffset <- likingMatrix[myself.agentIndex, agentIndex];
+		
+		write myself.name + ": offset " + likingOffset + " - " + myself.agentIndex + ", " + agentIndex;
+		
+    	socialize liking: l * likingOffset;
     }
     
     
